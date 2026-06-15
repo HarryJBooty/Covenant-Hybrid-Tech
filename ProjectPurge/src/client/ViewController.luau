@@ -33,6 +33,10 @@ local ViewModelInstances = {
     Melee = nil,
 } -- cached clones per tool type
 
+local function DoThis()
+    print("This function does this.")
+end
+
 local function ApplyCharacterDirectionLoop()
     -- tilt neck + shoulders toward cursor/camera pitch
     local Character = Player.Character
