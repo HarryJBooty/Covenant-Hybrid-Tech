@@ -54,7 +54,9 @@ local function Swing()
     if not Character then return end 
 
     local Sword = Character:FindFirstChildOfClass("Tool")
+    if not Sword then return end 
     local HitBox : BasePart = Sword:FindFirstChild("Hitbox", true)
+    if not HitBox then return end 
 
     local OverlapParams = OverlapParams.new()
     OverlapParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -173,7 +175,13 @@ local function ClearConnections()
 end 
 
 local function ToggleCursor(state : boolean)
-    local Core =  PlayerGui:FindFirstChild("AJ")
+    local Core = PlayerGui:FindFirstChild("AJ")
+    if not Core then
+        if not state then
+            UIS.MouseIconEnabled = true
+        end
+        return 
+    end 
     Cursor = Core:FindFirstChild("EnergySwordCursor")
 
 
@@ -225,18 +233,24 @@ local function InitSword(Sword : Tool)
     ToggleTargetingLoop(true)
 end 
 
-local function RemoveSword(Sword : Tool) 
-    ToggleCursor(false)
+local function RemoveSword(Sword : Tool?)
+    PlayerGui = Player.PlayerGui
     ClearConnections()
-    AnimationController.ClearSwingAnim()
-    AnimationController:PlayIdle(PlayerController:GetTool())
+    ToggleTargetingLoop(false)
     ViewController.ToggleOTSView(false)
     ViewController.SetOTSToolEquipped(false)
     ViewController.ApplyCharFollowsCursorLock(false, 0)
+    ToggleCursor(false)
+    SwingActiveFlag = false
+    LungeData.CanLunge = false
+    LungeData.CurrentTarget = nil
+    AnimationController.ClearSwingAnim()
     table.clear(WeaponData)
-    print("Removing Sword")
-    local Ammo = Sword:GetAttribute("Ammo")
-    print(Ammo)
+    AnimationController:PlayIdle(PlayerController:GetTool())
+    if Sword then
+        print("Removing Sword")
+        print(Sword:GetAttribute("Ammo"))
+    end
 end
 
 
@@ -259,6 +273,10 @@ end
 
 PlayerService.LocalPlayer.CharacterAdded:Connect(function(character)
         OnCharacterAdded(character)
+end)
+
+PlayerService.LocalPlayer.CharacterRemoving:Connect(function()
+    RemoveSword()
 end)
 
 if Player.Character then

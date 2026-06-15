@@ -87,7 +87,9 @@ function ViewController.ApplyCharFollowsCursorLock(state, AutomaticTimeout)
         if CharacterFollowsCursorConnection then
             CharacterFollowsCursorConnection:Disconnect()
             CharacterFollowsCursorConnection = nil 
-            Neck.C0 = OriginalNeckC0
+            if Neck then
+                Neck.C0 = OriginalNeckC0
+            end
             return 
         end
     end 
@@ -137,10 +139,10 @@ end
 
 function ViewController.ReleaseOTSLock()
     local Character = Player.Character
+    if not Character then return end 
     local Humanoid = Character:FindFirstChild("Humanoid")
-    local Hrp = Character:FindFirstChild("HumanoidRootPart")
+    if not Humanoid then return end 
 
-    local Camera = workspace.CurrentCamera
     Humanoid.AutoRotate = true
     if CamOffsetInitial then
         Humanoid.CameraOffset = CamOffsetInitial
@@ -149,6 +151,14 @@ end
 
 function ViewController.ToggleOTSView(state : boolean)
     local Character = Player.Character
+    if not Character then
+        UIS.MouseBehavior = Enum.MouseBehavior.Default
+        if MouseLockConnection then
+            MouseLockConnection:Disconnect()
+            MouseLockConnection = nil 
+        end
+        return 
+    end
     local Humanoid = Character:FindFirstChild("Humanoid")
     if state then
         if Humanoid then
@@ -209,6 +219,7 @@ end
 
 local function ToggleFPSarmsVisibility(state)
     local ViewModel = ViewController:ReceiveViewModel()
+    if not ViewModel then return end 
 
     if not state then
         for _, Child in ViewModel:GetChildren() do
@@ -371,8 +382,11 @@ end
 
 local function OnCharacterAdded(character)
     ThisTool = GetTool(character)
-    ViewController:Enable(ThisTool, character)
     ViewDetectionConnection = RunService.RenderStepped:Connect(GetViewState)
+    GetViewState()
+    if tostring(character:GetAttribute("ViewState")) == "FPS" then
+        ViewController:Enable(ThisTool, character)
+    end
     local Torso = character:WaitForChild("Torso")
     local Neck : Motor6D = Torso:FindFirstChild("Neck") 
     local RightShoulder = Torso:FindFirstChild("Right Shoulder")
@@ -424,6 +438,7 @@ local function OnCharacterAdded(character)
         ViewModelInstances.Gun = nil
         ViewModelInstances.Idle = nil
         ViewModelInstances.Melee = nil 
+        ActiveViewModel = nil
         if ViewDetectionConnection then
             ViewDetectionConnection:Disconnect()
             ViewDetectionConnection = nil
@@ -431,9 +446,31 @@ local function OnCharacterAdded(character)
     end)
 end
 
+local function CleanUpOnDeath()
+    IsOTSToolEquipped = false
+    ViewController.ToggleOTSView(false)
+    if CharacterFollowsCursorConnection then
+        CharacterFollowsCursorConnection:Disconnect()
+        CharacterFollowsCursorConnection = nil
+    end
+    RunService:UnbindFromRenderStep("MyFPSarms")
+    for _, ViewModel in ViewModelInstances do
+        if ViewModel then
+            ViewModel:Destroy()
+        end
+    end
+    ViewModelInstances.Idle = nil
+    ViewModelInstances.Gun = nil
+    ViewModelInstances.Melee = nil
+    ActiveViewModel = nil
+end
 
 Player.CharacterAdded:Connect(function(character)
     OnCharacterAdded(character)
+end)
+
+Player.CharacterRemoving:Connect(function()
+    CleanUpOnDeath()
 end)
 
 if Player.Character then

@@ -26,6 +26,11 @@ local function ClearIdleAnim()
     end
 end 
 
+function AnimationController.ClearOnDeath()
+    AnimationController.ClearSwingAnim()
+    ClearIdleAnim()
+end
+
 function AnimationController.PlaySwordSwing()
     local Character = Player.Character
     local Humanoid = Character:FindFirstChild("Humanoid")
@@ -82,5 +87,9 @@ end
 function AnimationController.StopSprint(self, Humanoid : Humanoid, Tool : Tool)
     AnimationController:PlayIdle(Tool)
 end 
+
+Player.CharacterRemoving:Connect(function()
+    AnimationController.ClearOnDeath()
+end)
 
 return AnimationController

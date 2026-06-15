@@ -47,6 +47,7 @@ local function ClearConnections()
 
     if MoonJumpConnection then 
         MoonJumpConnection:Disconnect()
+        MoonJumpConnection = nil
     end 
 
     if DashBoostConnection then
@@ -75,6 +76,7 @@ local function EnforceDefaults(character, Humanoid : Humanoid)
 end 
 
 local function ToggleSprint(Enabled : boolean, character, Humanoid : Humanoid)
+    if not character then return end 
     local HeldTool = GetTool(character)
 
     if not Humanoid then return end 
@@ -128,6 +130,25 @@ local function destroyGrappleBeam(beam: Beam?, endPart: BasePart?)
 	if endPart then
 		endPart:Destroy()
 	end
+end
+
+local function CleanUpOnDeath()
+    if GrappleActive then
+        GrappleActive = false
+        CleanUpGrappleToolConn()
+        if PullConnection then
+            PullConnection:Disconnect()
+            PullConnection = nil
+        end
+        destroyGrappleBeam(GrappleBeamData.TPS.GrappleBeam, GrappleBeamData.TPS.GrappleHitAnchor)
+        destroyGrappleBeam(GrappleBeamData.FPS.GrappleBeam, GrappleBeamData.FPS.GrappleHitAnchor)
+        GrappleBeamData.TPS.GrappleBeam = nil
+        GrappleBeamData.TPS.GrappleHitAnchor = nil
+        GrappleBeamData.FPS.GrappleBeam = nil
+        GrappleBeamData.FPS.GrappleHitAnchor = nil
+    end
+    ClearConnections()
+    DashActive = false
 end
 
 local function FinishGrapple()
@@ -219,6 +240,7 @@ local function InitGrapplePoint(character)
     local TPSGrapplePoint : Attachment
 
     local ViewModel = ViewController:ReceiveViewModel()
+    if not ViewModel then return nil end 
     local LeftArm = ViewModel:FindFirstChild("LeftArm")
     local RightArm = ViewModel:FindFirstChild("RightArm")
     if not LeftArm or not RightArm then return nil end 
@@ -262,8 +284,10 @@ local function GrappleToolChange(character, CurrentTargetPos)
 end
 
 local function FireGrapple(character)
+    if not character then return end 
 
     local TPSGrapplePoint, FPSGrapplePoint = InitGrapplePoint(character)
+    if not TPSGrapplePoint or not FPSGrapplePoint then return end 
 
     local Camera = workspace.CurrentCamera
     local MouseLocation = UserInputService:GetMouseLocation() 
@@ -300,6 +324,8 @@ local function FireGrapple(character)
 end 
 
 local function Dash(character, Humanoid)
+    if not character then return end 
+
     local DashDuration = MovementConfig.Dash.Duration
     local DashDistance = MovementConfig.Dash.Distance
     local DashCooldown = MovementConfig.Dash.Cooldown
@@ -449,7 +475,7 @@ end
 local function OnCharacterAdded(character)
     ClearConnections()
 
-    local Humanoid = character:WaitForChild("Humanoid", 10)
+    local Humanoid : Humanoid = character:WaitForChild("Humanoid", 10)
     -- clone grapple attachment onto left arm for tps beam
     local GrapplePoint = ReplicatedStorage:FindFirstChild("Viewports"):FindFirstChild("TPSGrapplePoint")
     local LeftArm = character:FindFirstChild("Left Arm")
@@ -499,12 +525,15 @@ local function OnCharacterAdded(character)
 
     table.insert(Connections, Began)
     table.insert(Connections, Ended)
-
-    character.Destroying:Once(ClearConnections)
+    Humanoid.Died:Connect(CleanUpOnDeath)
 end
 
 Player.CharacterAdded:Connect(function(character)
     OnCharacterAdded(character)
+end)
+
+Player.CharacterRemoving:Connect(function()
+    CleanUpOnDeath()
 end)
 
 if Player.Character then

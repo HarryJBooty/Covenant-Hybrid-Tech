@@ -6,6 +6,7 @@ local PlayerController = {}
 
 function PlayerController.GetTool()
     local Character = Player.Character
+    if not Character then return end 
     local Type = nil 
     for _, PotentialTool in Character:GetChildren() do
         if PotentialTool:IsA("Tool") then
