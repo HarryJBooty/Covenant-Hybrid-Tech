@@ -24,6 +24,7 @@ local ViewModelTemplate = nil
 local ActiveViewModel = nil
 local CamOffsetInitial = nil 
 local IsOTSToolEquipped = false
+local LungeTarget : Model? = nil
 local OriginalNeckC0
 local OriginalArmC0 = {} 
 

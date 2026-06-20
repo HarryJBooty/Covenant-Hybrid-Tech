@@ -2,6 +2,7 @@
 
 local SwordController = {} 
 local HttpService = game:GetService("HttpService")
+local StarterPack = game:GetService("StarterPack")
 local UIS = game:GetService("UserInputService")
 local PlayerService = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,6 +14,7 @@ local PlayerController = require(script.Parent.PlayerController)
 local SwingRemote : RemoteEvent = game.ReplicatedStorage.Remotes.SwordSwing 
 
 
+local LungeLoopConnection : RBXScriptConnection
 local TargetingLoopConnection : RBXScriptConnection
 local Cursor : ImageLabel
 local WeaponData = {} 
@@ -97,14 +99,149 @@ local function Swing()
 
 end 
 
+local function HasLungeLineOfSight(origin: Vector3, targetModel: Model, targetPart: BasePart, excludeList: { Instance }): boolean
+    local offset = targetPart.Position - origin
+    local distance = offset.Magnitude
+    if distance < 0.01 then
+        return true
+    end
 
--- TODO: implement sword lunge
--- 1. play lunge anim (WeaponConfig["Energy Sword"].Animations.Lunge)
--- 2. move player toward LungeData.CurrentTarget HRP, stop at ~5 studs or on hit
--- 3. run hit detection like Swing() but only on CurrentTarget
--- 4. set SwingActiveFlag so normal swing cant overlap
--- 5. reset LungeData after lunge ends
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = excludeList
+    params.IgnoreWater = true
+
+    local result = Workspace:Raycast(origin, offset, params)
+    if not result then
+        return true
+    end
+
+    local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
+    return hitModel == targetModel
+end
+
+local function StartLungeLoop(Character, Target)
+    if LungeLoopConnection then
+        LungeLoopConnection:Disconnect()
+        LungeLoopConnection = nil
+    end
+
+    if not Character or not Target or not Target:IsA("Model") then
+        return
+    end
+
+    local hrp = Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+    local humanoid = Character:FindFirstChildOfClass("Humanoid")
+    local targetHrp = Target:FindFirstChild("HumanoidRootPart") :: BasePart?
+    local targetHumanoid = Target:FindFirstChildOfClass("Humanoid")
+
+    if not hrp or not humanoid or not targetHrp or not targetHumanoid then
+        return
+    end
+    if humanoid.Health <= 0 or targetHumanoid.Health <= 0 then
+        return
+    end
+
+    local ARRIVAL_DISTANCE = 5
+    local INITIAL_SPEED = 24
+    local ACCELERATION = 120
+    local MAX_SPEED = 72
+    local MAX_DURATION = 5
+
+    local startTime = os.clock()
+    local currentSpeed = INITIAL_SPEED
+    local losExclude = { Character, Workspace.CurrentCamera }
+
+    local function finishLunge()
+        if LungeLoopConnection then
+            LungeLoopConnection:Disconnect()
+            LungeLoopConnection = nil
+        end
+
+        if hrp and hrp.Parent then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+        end
+
+        LungeData.CanLunge = false
+        LungeData.CurrentTarget = nil
+        if Cursor then
+            Cursor.ImageColor3 = Color3.new(255, 255, 255)
+        end
+    end
+
+    local function shouldStopLunge(): boolean
+        if not Character.Parent or Player.Character ~= Character then
+            return true
+        end
+
+        if not hrp.Parent or not targetHrp.Parent then
+            return true
+        end
+
+        if humanoid.Health <= 0 or targetHumanoid.Health <= 0 then
+            return true
+        end
+
+        local tool = Character:FindFirstChildOfClass("Tool")
+        if not tool or tool:GetAttribute("Type") ~= "Melee" then
+            return true
+        end
+
+        if os.clock() - startTime > MAX_DURATION then
+            return true
+        end
+
+        local distance = (targetHrp.Position - hrp.Position).Magnitude
+        if distance <= ARRIVAL_DISTANCE then
+            Swing() 
+            return true
+        end
+
+        local losOrigin = hrp.Position + Vector3.new(0, 1.5, 0)
+        if not HasLungeLineOfSight(losOrigin, Target, targetHrp, losExclude) then
+            return true
+        end
+
+        return false
+    end
+
+    LungeLoopConnection = RunService.RenderStepped:Connect(function(deltaTime)
+        if shouldStopLunge() then
+            finishLunge()
+            return
+        end
+
+        local offset = targetHrp.Position - hrp.Position
+        local distance = offset.Magnitude
+        if distance <= ARRIVAL_DISTANCE then
+            finishLunge()
+            return
+        end
+
+        -- Face the target so the screen centre stays on them without moving the camera.
+        local flatLook = Vector3.new(offset.X, 0, offset.Z)
+        if flatLook.Magnitude > 0.01 then
+            hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + flatLook.Unit)
+        end
+
+        currentSpeed = math.min(currentSpeed + ACCELERATION * deltaTime, MAX_SPEED)
+        hrp.AssemblyLinearVelocity = offset.Unit * currentSpeed
+    end)
+end 
+
+
 local function Lunge() 
+    local Character = Player.Character
+    if not Character then return end
+
+    --local Humanoid : Humanoid = Player.Humanoid 
+    --if not Humanoid then return end 
+    --if Humanoid.Health <= 0 then return end 
+
+    if LungeData.CurrentTarget and LungeData.CanLunge then
+        StartLungeLoop(Character, LungeData.CurrentTarget) 
+    end
+
 end 
 
 local function SetTargetAquired(state, Target : Instance)
@@ -223,7 +360,7 @@ local function InitSword(Sword : Tool)
             print("Left click")
             if LungeData.CanLunge == true then 
                 -- TODO: call Lunge() here instead of Swing()
-                Swing() 
+                Lunge()  
             else
                 Swing() 
             end 
