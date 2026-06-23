@@ -15,8 +15,8 @@ local MovementConfig = {
 
     MoonMovement  = {
         Enabled = true,
-        AirGravityScale = 0.35, -- lower = floatier
-        JumpHeightMultiplier = 1.15,
+        AirGravityScale = 0.3, -- lower = floatier (higher = less anti-gravity)
+        JumpHeightMultiplier = 0.9,
     },
 
     Dash = {

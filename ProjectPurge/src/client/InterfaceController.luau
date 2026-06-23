@@ -81,11 +81,15 @@ end
 Player.CharacterAdded:Connect(function(character)
     Character = Player.Character
     PlayerGui = Player.PlayerGui
+    PlayerGui:WaitForChild("AJ", 10)
 
     Character:GetAttributeChangedSignal("Dashes"):Connect(function()
         InterfaceController:UpdateDash(Character)
     end)
 
+    -- sync hud to a fresh state each life (changed signals won't fire for spawn defaults)
+    InterfaceController:RegenGrapple()
+    InterfaceController:UpdateDash(Character)
 end)
 
 

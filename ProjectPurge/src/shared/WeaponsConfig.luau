@@ -12,7 +12,7 @@ local WeaponsConfig = {
 
     ["Energy Sword"] = {
         Damage = 100,
-        LungeDistance = 45, -- raycast range for lock-on cursor
+        LungeDistance = 60, -- raycast range for lock-on cursor
         -- TODO: lunge movement tuning (used by SwordController.Lunge)
         -- LungeSpeed = 40,
         -- LungeStopDistance = 5,

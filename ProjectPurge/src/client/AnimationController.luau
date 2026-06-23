@@ -8,6 +8,7 @@ local WeaponConfig = require(game.ReplicatedStorage.Shared.WeaponsConfig)
 
 local CurrentIdleTrack : AnimationTrack
 local CurrentSwingTrack 
+local CurrentLungeTrack 
 
 function AnimationController.ClearSwingAnim()
     -- stop one-shot swing so idle can resume
@@ -28,6 +29,7 @@ end
 
 function AnimationController.ClearOnDeath()
     AnimationController.ClearSwingAnim()
+    AnimationController.StopSwordLunge()
     ClearIdleAnim()
 end
 
@@ -50,9 +52,33 @@ function AnimationController.PlaySwordSwing()
     return CurrentSwingTrack
 end
 
--- TODO: sword lunge anim, called from SwordController.Lunge()
--- same pattern as PlaySwordSwing, use WeaponConfig["Energy Sword"].Animations.Lunge
+-- looped pose held for the duration of a lunge, stopped by StopSwordLunge
 function AnimationController.PlaySwordLunge()
+    if CurrentLungeTrack then return CurrentLungeTrack end -- already looping
+
+    local Character = Player.Character
+    local Humanoid = Character and Character:FindFirstChild("Humanoid")
+    if not Humanoid then return end 
+    local Animatior = Humanoid:FindFirstChildOfClass("Animator")
+    if not Animatior then return end 
+
+    local LungeAnimation = Instance.new("Animation")
+    LungeAnimation.AnimationId = WeaponConfig["Energy Sword"].Animations.Lunge
+
+    CurrentLungeTrack = Animatior:LoadAnimation(LungeAnimation)
+    CurrentLungeTrack.Priority = Enum.AnimationPriority.Action
+    CurrentLungeTrack.Looped = true
+    CurrentLungeTrack:Play()
+
+    return CurrentLungeTrack
+end
+
+function AnimationController.StopSwordLunge()
+    if CurrentLungeTrack then
+        CurrentLungeTrack:Stop(0.15)
+        CurrentLungeTrack:Destroy()
+        CurrentLungeTrack = nil
+    end
 end
 
 function AnimationController.PlayIdle(self, Tool : Tool)

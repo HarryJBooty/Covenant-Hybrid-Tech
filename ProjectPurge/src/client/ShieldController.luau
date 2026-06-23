@@ -50,7 +50,7 @@ local function StartBeep()
 	end
 	BeepSoundPlaying = true
 
-	BeepSound.Ended:Connect(function()
+	BeepSound.Ended:Once(function()
 		BeepSoundPlaying = false
 	end)
 
@@ -77,7 +77,7 @@ local function StartRegenSFX()
 
 	RegenSoundPlaying = true
 
-	RegenSound.Ended:Connect(function()
+	RegenSound.Ended:Once(function()
 		RegenSoundPlaying = false
 	end)
 
@@ -159,6 +159,7 @@ local function ApplyShieldBrokenEffect(state : boolean)
 		end
 	end
 	local ViewModel = ViewController:ReceiveViewModel() 
+	if not ViewModel then return end
 	PreviousViewModel = ViewModel
 	local LightningFX = EffectsFolder:FindFirstChild("EmptyShield")
 
@@ -323,8 +324,15 @@ local function BindShieldUI()
 end 
 
 local function OnCharacterAdded(character : Model)
+	ShieldsDown = false
+	PreviousViewModel = nil
+	ArmRegenSFX = true
+	StopBeep()
+	StopRegenSFX()
     Character = Player.Character
     WaitForServerSetup(character)
+    -- ViewController builds the viewmodel on spawn; ensure it before binding highlight
+    ViewController:EnsureViewModel()
     WaitForViewModel(5)
 	BindShieldUI()
 	print("passed initial")
@@ -333,15 +341,22 @@ local function OnCharacterAdded(character : Model)
 	MaxShield = character:GetAttribute("MaxShield")
     local ShieldHighlight = CreateShieldHighlight()
     local ViewModel = ViewController:ReceiveViewModel()
+	UpdateShieldHighlight(character, ShieldHighlight)
+	UpdateShieldUI(character)
+
     PrevShield = MaxShield
 	
-    ShieldHighlight.Parent = ViewModel
+    if ViewModel then
+        ShieldHighlight.Parent = ViewModel
+    end
+
 	character:GetAttributeChangedSignal("CurrentTool"):Connect(function()
 		-- move highlight when viewmodel swaps
 		print("attribute changed signal got on shield controller client")	
 		ViewModel = ViewController:ReceiveViewModel() 
-		print(ViewModel.Name)
-		ShieldHighlight.Parent = ViewModel
+		if ViewModel then
+			ShieldHighlight.Parent = ViewModel
+		end
 		if ShieldsDown then
 			ApplyShieldBrokenEffect(true)
 		end

@@ -28,6 +28,18 @@ local LungeTarget : Model? = nil
 local OriginalNeckC0
 local OriginalArmC0 = {} 
 
+local RemotesFolder = game.ReplicatedStorage:WaitForChild("Remotes")
+local CharacterLookRemote : RemoteEvent = RemotesFolder:WaitForChild("CharacterLook")
+
+-- throttle how often we replicate our look pitch to the server
+local LookSendLastPitch : number? = nil
+local LookSendLastTime = 0
+local LOOK_SEND_INTERVAL = 1 / 15
+local LOOK_SEND_THRESHOLD = math.rad(2)
+
+-- original joint C0s for OTHER players' characters, weak keys so respawns are collected
+local RemoteLookData = setmetatable({}, { __mode = "k" })
+
 local ViewModelInstances = {
     Idle = nil,
     Gun = nil,
@@ -47,24 +59,17 @@ local function ApplyCharacterDirectionLoop()
     local RightShoulder : Motor6D = Torso and Torso:FindFirstChild("Right Shoulder")
     local LeftShoulder : Motor6D = Torso and Torso:FindFirstChild("Left Shoulder")
     local Camera = Workspace.CurrentCamera
-    local yAlpha
-    local Pitch 
     local RightZ
     local LeftZ 
 
     if not Character or not Humanoid or not Torso or not Camera or not Neck then return end 
 
-    local MouseLocation = UIS:GetMouseLocation()
     local CameraDirection = Camera.CFrame.LookVector
 
-    -- Head orientation between +45 and -15     
-    -- Smaller y values > top of the screen, bigger y values > bottom of screen
-    if UIS.MouseBehavior == Enum.MouseBehavior.LockCenter then 
-        Pitch = math.asin(CameraDirection.Y)
-    else 
-        yAlpha = math.clamp(MouseLocation.Y / Camera.ViewportSize.Y, 0, 1)
-        Pitch = math.rad(45 + (-15 - 45) * yAlpha)
-    end
+    -- always follow the camera pitch. previously this used the mouse position whenever
+    -- MouseBehavior wasn't LockCenter, which made the head/arms snap up while right-click
+    -- (camera pan) temporarily unlocks the mouse.
+    local Pitch = math.asin(math.clamp(CameraDirection.Y, -1, 1))
 
     -- Arms are mirrored, so the same visual floor reads as -5 on the right and +5 on the left
     RightZ = math.clamp(Pitch,  math.rad(-5),   math.rad(100))
@@ -73,7 +78,56 @@ local function ApplyCharacterDirectionLoop()
     Neck.C0          = OriginalNeckC0                * CFrame.Angles(-Pitch, 0, 0)
     RightShoulder.C0 = OriginalArmC0[RightShoulder]  * CFrame.Angles(0, 0, RightZ)
     LeftShoulder.C0  = OriginalArmC0[LeftShoulder]   * CFrame.Angles(0, 0, LeftZ)
+
+    -- replicate the pitch (throttled) so everyone else poses this body the same way
+    local Now = os.clock()
+    if (Now - LookSendLastTime) >= LOOK_SEND_INTERVAL
+        and (LookSendLastPitch == nil or math.abs(Pitch - LookSendLastPitch) >= LOOK_SEND_THRESHOLD) then
+        CharacterLookRemote:FireServer(Pitch)
+        LookSendLastPitch = Pitch
+        LookSendLastTime = Now
+    end
 end 
+
+-- pose another player's neck/shoulders from a replicated pitch (nil = reset to default)
+local function ApplyRemoteLook(otherPlayer : Player, pitch : number?)
+    local character = otherPlayer.Character
+    if not character then return end 
+    local Torso = character:FindFirstChild("Torso")
+    if not Torso then return end 
+    local Neck = Torso:FindFirstChild("Neck")
+    local RightShoulder = Torso:FindFirstChild("Right Shoulder")
+    local LeftShoulder = Torso:FindFirstChild("Left Shoulder")
+    if not Neck or not RightShoulder or not LeftShoulder then return end 
+
+    local data = RemoteLookData[character]
+    if not data then
+        data = {
+            Neck = Neck, Right = RightShoulder, Left = LeftShoulder,
+            NeckC0 = Neck.C0, RightC0 = RightShoulder.C0, LeftC0 = LeftShoulder.C0,
+        }
+        RemoteLookData[character] = data
+    end
+
+    if pitch == nil then
+        data.Neck.C0 = data.NeckC0
+        data.Right.C0 = data.RightC0
+        data.Left.C0 = data.LeftC0
+        RemoteLookData[character] = nil
+        return
+    end
+
+    local RightZ = math.clamp(pitch,  math.rad(-5),   math.rad(100))
+    local LeftZ  = math.clamp(-pitch, math.rad(-100), math.rad(5))
+    data.Neck.C0  = data.NeckC0  * CFrame.Angles(-pitch, 0, 0)
+    data.Right.C0 = data.RightC0 * CFrame.Angles(0, 0, RightZ)
+    data.Left.C0  = data.LeftC0  * CFrame.Angles(0, 0, LeftZ)
+end
+
+CharacterLookRemote.OnClientEvent:Connect(function(otherPlayer : Player, pitch : number?)
+    if otherPlayer == Player then return end 
+    ApplyRemoteLook(otherPlayer, pitch)
+end)
 
 function ViewController.ApplyCharFollowsCursorLock(state, AutomaticTimeout)
     if AutomaticTimeout == 0 then
@@ -91,6 +145,9 @@ function ViewController.ApplyCharFollowsCursorLock(state, AutomaticTimeout)
             if Neck then
                 Neck.C0 = OriginalNeckC0
             end
+            -- tell everyone else to drop our look pose
+            CharacterLookRemote:FireServer(nil)
+            LookSendLastPitch = nil
             return 
         end
     end 
@@ -238,6 +295,62 @@ local function ToggleFPSarmsVisibility(state)
 end 
 
 
+local function ResolveViewModelTemplate(Tool)
+    if Tool == "Melee" then
+        return ViewportFolder:FindFirstChild("Melee")
+    end
+    return ViewportFolder:FindFirstChild(ViewportConfig.Idle)
+end
+
+-- creates/caches the viewmodel for a tool, independent of FPS render binding
+local function CreateOrGetViewModel(Tool)
+    local existing = ViewModelInstances[Tool]
+    if existing and existing.Parent then
+        return existing
+    end
+
+    local template = ResolveViewModelTemplate(Tool)
+    if not template then
+        return nil
+    end
+
+    local clone = template:Clone()
+    clone.Parent = workspace.CurrentCamera
+    ViewModelInstances[Tool] = clone
+    return clone
+end
+
+-- guarantees a viewmodel exists even in TPS, so shield/grapple can rely on it
+function ViewController.EnsureViewModel(self, Tool)
+    Tool = Tool or ThisTool or "Empty"
+    local viewModel = CreateOrGetViewModel(Tool)
+    if not viewModel then
+        return nil
+    end
+    ActiveViewModel = viewModel
+
+    local Camera = workspace.CurrentCamera
+    if Camera then
+        viewModel:PivotTo(Camera.CFrame * CFrame.new(0, -1.3, 0))
+    end
+
+    -- when not in first person, keep the arms hidden so they don't render at the camera
+    local character = Player.Character
+    local inFPS = character and tostring(character:GetAttribute("ViewState")) == "FPS"
+    if not inFPS then
+        for _, Child in viewModel:GetDescendants() do
+            if Child:IsA("BasePart") then
+                Child.Transparency = 1
+                Child.LocalTransparencyModifier = 1
+                Child.CanCollide = false
+                Child.Massless = true
+            end
+        end
+    end
+
+    return viewModel
+end
+
 function ViewController.UpdateFPSarms(self, deltaTime : number, Tool)
     -- swap viewmodel template based on equipped tool, follow camera
     local OldViewModel
@@ -245,23 +358,8 @@ function ViewController.UpdateFPSarms(self, deltaTime : number, Tool)
         OldViewModel = ViewController:ReceiveViewModel()
     end
 
-    if Tool == "Empty" then 
-        ViewModelTemplate = ViewportFolder:FindFirstChild(ViewportConfig.Idle)
-    elseif Tool == "Melee" then
-        ViewModelTemplate = ViewportFolder:FindFirstChild("Melee")
-    else 
-        ViewModelTemplate = ViewportFolder:FindFirstChild(ViewportConfig.Idle)
-    end 
-
-    if not ViewModelTemplate then return end
-
-    if not ViewModelInstances[Tool] then
-        ActiveViewModel = ViewModelTemplate:Clone()
-        ActiveViewModel.Parent = workspace.CurrentCamera
-        ViewModelInstances[Tool] = ActiveViewModel
-    else 
-        ActiveViewModel = ViewModelInstances[Tool]
-    end
+    ActiveViewModel = CreateOrGetViewModel(Tool)
+    if not ActiveViewModel then return end
 
     if OldViewModel then
         for _, Child : BasePart in OldViewModel:GetDescendants() do
@@ -341,6 +439,7 @@ local function EnsureRemovedToolVisibility(Tool)
 end
 
 function ViewController.ToggleViewModelParticles(state)
+    if not ActiveViewModel then return end
     for _, Child in ActiveViewModel:GetChildren() do
         if Child.Name == "LeftArm" or Child.Name == "RightArm" then
             for _, SubChild in Child:GetChildren() do
@@ -383,8 +482,14 @@ end
 
 local function OnCharacterAdded(character)
     ThisTool = GetTool(character)
+    if ViewDetectionConnection then
+        ViewDetectionConnection:Disconnect()
+        ViewDetectionConnection = nil
+    end
     ViewDetectionConnection = RunService.RenderStepped:Connect(GetViewState)
     GetViewState()
+    -- build the viewmodel up front so shield/grapple work without entering FPS first
+    ViewController:EnsureViewModel(ThisTool)
     if tostring(character:GetAttribute("ViewState")) == "FPS" then
         ViewController:Enable(ThisTool, character)
     end
@@ -435,6 +540,8 @@ local function OnCharacterAdded(character)
     end)
 
     character.Destroying:Connect(function()
+        -- skip if a respawn already took over, else we clobber the new life's state
+        if Player.Character and Player.Character ~= character then return end
         table.clear(OriginalArmC0)
         ViewModelInstances.Gun = nil
         ViewModelInstances.Idle = nil

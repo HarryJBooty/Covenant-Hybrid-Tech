@@ -13,8 +13,14 @@ local InterfaceController = require(script.Parent:FindFirstChild("InterfaceContr
 local RemotesFolder = game.ReplicatedStorage:FindFirstChild("Remotes")
 local Workspace = game.Workspace
 
+local GrappleStartRemote : RemoteEvent = RemotesFolder:WaitForChild("GrappleBeamStart")
+local GrappleStopRemote : RemoteEvent = RemotesFolder:WaitForChild("GrappleBeamStop")
+
 local Player = PlayerService.LocalPlayer
 local Connections: { RBXScriptConnection } = {} 
+
+-- third-person beams for OTHER players' grapples, drawn locally on our screen, keyed by player
+local RemoteGrappleBeams : { [Player]: { Beam: Beam?, EndPart: BasePart? } } = {}
 
 local GrappleActive = false
 local GrappleBeamData = {
@@ -30,10 +36,14 @@ local GrappleBeamData = {
 local PullConnection: RBXScriptConnection? = nil 
 local GrappleCurrentToolConnection :RBXScriptConnection? = nil 
 
+-- what we grappled onto, plus the hit point in that part's local space, so we can track it as it moves
+local GrappleTargetPart: BasePart? = nil
+local GrappleTargetOffset: Vector3? = nil
+
 local DashActive = false
 local DashBoostConnection: RBXScriptConnection? = nil 
 
-local MoonJumpConnection: RBXScriptConnection? = nil 
+local MoonMovementConnection: RBXScriptConnection? = nil 
 
 function MovementController.GetIsGrappling()
     return GrappleActive
@@ -45,9 +55,9 @@ local function ClearConnections()
     end 
     table.clear(Connections)
 
-    if MoonJumpConnection then 
-        MoonJumpConnection:Disconnect()
-        MoonJumpConnection = nil
+    if MoonMovementConnection then 
+        MoonMovementConnection:Disconnect()
+        MoonMovementConnection = nil
     end 
 
     if DashBoostConnection then
@@ -90,19 +100,13 @@ local function ToggleSprint(Enabled : boolean, character, Humanoid : Humanoid)
     end 
 end 
 
--- beam from arm attachment to raycast hit point
-local function createGrappleBeam(grappleAttachment: Attachment, targetWorld: Vector3): (Beam, BasePart)
-	local endPart = Instance.new("Part")
-	endPart.Name = "GrappleHitAnchor"
-	endPart.Anchored = true
-	endPart.CanCollide = false
-	endPart.Transparency = 1
-	endPart.Size = Vector3.new(0.2, 0.2, 0.2)
-	endPart.Position = targetWorld
-	endPart.Parent = workspace
+-- beam from arm attachment to the raycast hit point. the end attachment lives ON the hit part
+-- (at the local-space hit point) so the beam sticks to it for free as the part moves.
+local function createGrappleBeam(grappleAttachment: Attachment, hitPart: BasePart, targetWorld: Vector3): (Beam, Attachment)
 	local endAttachment = Instance.new("Attachment")
 	endAttachment.Name = "GrappleHit"
-	endAttachment.Parent = endPart
+	endAttachment.Position = hitPart.CFrame:PointToObjectSpace(targetWorld)
+	endAttachment.Parent = hitPart
 	local beam = Instance.new("Beam")
 	beam.Name = "GrappleBeam"
 	beam.Attachment0 = grappleAttachment
@@ -113,7 +117,15 @@ local function createGrappleBeam(grappleAttachment: Attachment, targetWorld: Vec
 	beam.LightEmission = 0.4
 	beam.Color = ColorSequence.new(Color3.fromRGB(5, 6, 8))
 	beam.Parent = grappleAttachment.Parent
-	return beam, endPart
+	return beam, endAttachment
+end
+
+-- current world position of the thing we grappled onto, nil if it's gone
+local function GetGrappleWorldTarget(): Vector3?
+	if GrappleTargetPart and GrappleTargetPart.Parent and GrappleTargetOffset then
+		return GrappleTargetPart.CFrame:PointToWorldSpace(GrappleTargetOffset)
+	end
+	return nil
 end
 
 local function CleanUpGrappleToolConn()
@@ -123,18 +135,19 @@ local function CleanUpGrappleToolConn()
     end 
 end
 
-local function destroyGrappleBeam(beam: Beam?, endPart: BasePart?)
+local function destroyGrappleBeam(beam: Beam?, endAnchor: Instance?)
 	if beam then
 		beam:Destroy()
 	end
-	if endPart then
-		endPart:Destroy()
+	if endAnchor then
+		endAnchor:Destroy()
 	end
 end
 
 local function CleanUpOnDeath()
     if GrappleActive then
         GrappleActive = false
+        GrappleStopRemote:FireServer()
         CleanUpGrappleToolConn()
         if PullConnection then
             PullConnection:Disconnect()
@@ -146,6 +159,8 @@ local function CleanUpOnDeath()
         GrappleBeamData.TPS.GrappleHitAnchor = nil
         GrappleBeamData.FPS.GrappleBeam = nil
         GrappleBeamData.FPS.GrappleHitAnchor = nil
+        GrappleTargetPart = nil
+        GrappleTargetOffset = nil
     end
     ClearConnections()
     DashActive = false
@@ -154,6 +169,7 @@ end
 local function FinishGrapple()
     if not GrappleActive then return end 
     GrappleActive = false
+    GrappleStopRemote:FireServer()
     CleanUpGrappleToolConn()
 
     if PullConnection then 
@@ -167,6 +183,8 @@ local function FinishGrapple()
     GrappleBeamData.TPS.GrappleHitAnchor = nil
     GrappleBeamData.FPS.GrappleBeam = nil 
     GrappleBeamData.FPS.GrappleHitAnchor = nil 
+    GrappleTargetPart = nil
+    GrappleTargetOffset = nil
 
     local Character = Player.Character
     local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
@@ -181,9 +199,11 @@ local function FinishGrapple()
     InterfaceController:RegenGrapple() 
 end
 
--- velocity pull toward grapple point each heartbeat
-local function PullPlayerToTarget(character : Model, TargetPosition : Vector3 ) : RBXScriptConnection
-    local StudsPerSecond = 30
+-- velocity pull toward the grapple point each heartbeat, tracking the target as it moves
+local function PullPlayerToTarget(character : Model) : RBXScriptConnection
+    local BaseSpeed = 30       -- speed the instant we latch on
+    local MaxSpeed = 95        -- cap so we don't overshoot wildly
+    local Acceleration = 22    -- studs/sec gained per second held
     local ArrivalDistance = 5 
     local MaxDurationSeconds = 5
 
@@ -202,6 +222,15 @@ local function PullPlayerToTarget(character : Model, TargetPosition : Vector3 ) 
             return 
         end 
 
+        -- re-read the target each frame so we follow whatever (or whoever) we latched onto
+        local TargetPosition = GetGrappleWorldTarget()
+        if not TargetPosition then
+            Connection:Disconnect()
+            HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+            FinishGrapple()
+            return 
+        end
+
         local CurrentPosition = HumanoidRootPart.Position 
         local Offset = TargetPosition - CurrentPosition
         local offsetX = Offset.X 
@@ -216,6 +245,10 @@ local function PullPlayerToTarget(character : Model, TargetPosition : Vector3 ) 
             FinishGrapple()
             return 
         end 
+
+        -- ramp the pull speed up the longer we've been grappling, capped at MaxSpeed
+        local Elapsed = os.clock() - StartTime
+        local StudsPerSecond = math.min(BaseSpeed + Acceleration * Elapsed, MaxSpeed)
 
         local Direction = Vector3.new(offsetX / DistanceMagnitude, offsetY / DistanceMagnitude, offsetZ / DistanceMagnitude)
         HumanoidRootPart.AssemblyLinearVelocity = Direction * StudsPerSecond
@@ -235,22 +268,65 @@ function MovementController.ToggleGrappleBeamVisibility(ViewState)
     end
 end 
 
-local function InitGrapplePoint(character)
-    local FPSGrapplePoint : Attachment
-    local TPSGrapplePoint : Attachment
+-- clone the tps beam attachment onto the character left arm, if missing
+local function EnsureTPSGrapplePoint(character)
+    local LeftArm = character:FindFirstChild("Left Arm")
+    if not LeftArm then return nil end 
 
+    local Existing = LeftArm:FindFirstChild("TPSGrapplePoint")
+    if Existing then return Existing end 
+
+    local Viewports = ReplicatedStorage:FindFirstChild("Viewports")
+    local Template = Viewports and Viewports:FindFirstChild("TPSGrapplePoint")
+    if not Template then return nil end 
+
+    local ThisGrapplePoint = Template:Clone()
+    ThisGrapplePoint.Name = "TPSGrapplePoint"
+    ThisGrapplePoint.Parent = LeftArm
+    return ThisGrapplePoint
+end 
+
+-- destroy the locally-drawn beam for another player's grapple
+local function DestroyRemoteGrappleBeam(somePlayer : Player)
+    local Data = RemoteGrappleBeams[somePlayer]
+    if not Data then return end 
+    destroyGrappleBeam(Data.Beam, Data.EndPart)
+    RemoteGrappleBeams[somePlayer] = nil
+end
+
+-- draw another player's third-person beam locally, from their real arm to what they grappled.
+-- the end attaches to the hit part, so it tracks moving targets the same as the owner's view.
+local function CreateRemoteGrappleBeam(somePlayer : Player, hitPart : BasePart, targetPosition : Vector3)
+    DestroyRemoteGrappleBeam(somePlayer) -- never stack two beams for the same player
+
+    local character = somePlayer.Character
+    if not character or not hitPart then return end 
+
+    local GrappleAttachment = EnsureTPSGrapplePoint(character)
+    if not GrappleAttachment then return end 
+
+    local Beam, EndPart = createGrappleBeam(GrappleAttachment, hitPart, targetPosition)
+    Beam.Enabled = true
+    RemoteGrappleBeams[somePlayer] = { Beam = Beam, EndPart = EndPart }
+end
+
+local function InitGrapplePoint(character)
+    -- viewmodel can be missing right after a respawn, so rebuild it on demand
     local ViewModel = ViewController:ReceiveViewModel()
+    if not ViewModel then 
+        ViewModel = ViewController:EnsureViewModel()
+    end 
     if not ViewModel then return nil end 
+
     local LeftArm = ViewModel:FindFirstChild("LeftArm")
     local RightArm = ViewModel:FindFirstChild("RightArm")
     if not LeftArm or not RightArm then return nil end 
-    FPSGrapplePoint = LeftArm:FindFirstChild("GrapplePoint")
+    local FPSGrapplePoint = LeftArm:FindFirstChild("GrapplePoint")
     if not FPSGrapplePoint then 
         FPSGrapplePoint = RightArm:FindFirstChild("GrapplePoint")    
     end 
 
-    local TPSLeftArm = character:FindFirstChild("Left Arm")
-    TPSGrapplePoint = TPSLeftArm:FindFirstChild("TPSGrapplePoint")      
+    local TPSGrapplePoint = EnsureTPSGrapplePoint(character)
 
     if not TPSGrapplePoint or not FPSGrapplePoint then return nil end 
 
@@ -258,7 +334,10 @@ local function InitGrapplePoint(character)
 end 
 
 -- rebuild beams when tool changes mid-grapple
-local function GrappleToolChange(character, CurrentTargetPos)
+local function GrappleToolChange(character)
+    local CurrentTargetPos = GetGrappleWorldTarget()
+    if not CurrentTargetPos or not GrappleTargetPart then return end 
+
     local FPSGrappleBeam = GrappleBeamData.FPS.GrappleBeam
     local FPSGrappleAnchor = GrappleBeamData.FPS.GrappleHitAnchor
     local TPSGrappleBeam =  GrappleBeamData.TPS.GrappleBeam
@@ -276,8 +355,8 @@ local function GrappleToolChange(character, CurrentTargetPos)
     local TPSGrapplePoint, FPSGrapplePoint = InitGrapplePoint(character)
     if not TPSGrapplePoint or not FPSGrapplePoint then return end 
 
-    GrappleBeamData.FPS.GrappleBeam, GrappleBeamData.FPS.GrappleHitAnchor = createGrappleBeam(FPSGrapplePoint, CurrentTargetPos)
-    GrappleBeamData.TPS.GrappleBeam, GrappleBeamData.TPS.GrappleHitAnchor = createGrappleBeam(TPSGrapplePoint, CurrentTargetPos)
+    GrappleBeamData.FPS.GrappleBeam, GrappleBeamData.FPS.GrappleHitAnchor = createGrappleBeam(FPSGrapplePoint, GrappleTargetPart, CurrentTargetPos)
+    GrappleBeamData.TPS.GrappleBeam, GrappleBeamData.TPS.GrappleHitAnchor = createGrappleBeam(TPSGrapplePoint, GrappleTargetPart, CurrentTargetPos)
     local ViewState = ViewController:GetMode()
     MovementController.ToggleGrappleBeamVisibility(ViewState)
     ViewController:Grapple()
@@ -307,18 +386,24 @@ local function FireGrapple(character)
     local HitPart = AimResult.Instance 
 
     if GrappleActive then return end 
+    if not HitPart then return end 
     GrappleActive = true
-    GrappleBeamData.FPS.GrappleBeam, GrappleBeamData.FPS.GrappleHitAnchor = createGrappleBeam(FPSGrapplePoint, TargetPosition)
-    GrappleBeamData.TPS.GrappleBeam, GrappleBeamData.TPS.GrappleHitAnchor = createGrappleBeam(TPSGrapplePoint, TargetPosition)
+    -- remember the hit point in the target's local space so we can track it as it moves
+    GrappleTargetPart = HitPart
+    GrappleTargetOffset = HitPart.CFrame:PointToObjectSpace(TargetPosition)
+    GrappleBeamData.FPS.GrappleBeam, GrappleBeamData.FPS.GrappleHitAnchor = createGrappleBeam(FPSGrapplePoint, HitPart, TargetPosition)
+    GrappleBeamData.TPS.GrappleBeam, GrappleBeamData.TPS.GrappleHitAnchor = createGrappleBeam(TPSGrapplePoint, HitPart, TargetPosition)
     local ViewState = ViewController:GetMode()
     MovementController.ToggleGrappleBeamVisibility(ViewState)
     ViewController:Grapple()
     SFXController:PlayGrappleShot(character)
-    PullConnection = PullPlayerToTarget(character, TargetPosition)
+    -- let everyone else draw the third-person beam from our real arm, stuck to the same part
+    GrappleStartRemote:FireServer(HitPart, TargetPosition)
+    PullConnection = PullPlayerToTarget(character)
     CleanUpGrappleToolConn()
     GrappleCurrentToolConnection = character:GetAttributeChangedSignal("CurrentTool"):Connect(function(...)  
         if not GrappleActive then return end 
-        GrappleToolChange(character, TargetPosition)
+        GrappleToolChange(character)
     end)
     InterfaceController:UseGrapple() 
 end 
@@ -476,14 +561,9 @@ local function OnCharacterAdded(character)
     ClearConnections()
 
     local Humanoid : Humanoid = character:WaitForChild("Humanoid", 10)
-    -- clone grapple attachment onto left arm for tps beam
-    local GrapplePoint = ReplicatedStorage:FindFirstChild("Viewports"):FindFirstChild("TPSGrapplePoint")
-    local LeftArm = character:FindFirstChild("Left Arm")
-    if GrapplePoint then
-        local ThisGrapplePoint = GrapplePoint:Clone()
-        ThisGrapplePoint.Name = "TPSGrapplePoint"
-        ThisGrapplePoint.Parent = LeftArm
-    end
+    -- clone grapple attachment onto left arm for tps beam (wait so it lands on the new rig)
+    character:WaitForChild("Left Arm", 10)
+    EnsureTPSGrapplePoint(character)
     if not Humanoid then return end 
 
     character:WaitForChild("Animate", 5)
@@ -527,6 +607,21 @@ local function OnCharacterAdded(character)
     table.insert(Connections, Ended)
     Humanoid.Died:Connect(CleanUpOnDeath)
 end
+
+-- other players' grapples: draw/erase their beam on our screen (server never tells the grappler)
+GrappleStartRemote.OnClientEvent:Connect(function(somePlayer : Player, hitPart : BasePart, targetPosition : Vector3)
+    if somePlayer == Player then return end 
+    CreateRemoteGrappleBeam(somePlayer, hitPart, targetPosition)
+end)
+
+GrappleStopRemote.OnClientEvent:Connect(function(somePlayer : Player)
+    DestroyRemoteGrappleBeam(somePlayer)
+end)
+
+-- if a grappling player leaves, clean up their dangling beam/anchor
+PlayerService.PlayerRemoving:Connect(function(somePlayer : Player)
+    DestroyRemoteGrappleBeam(somePlayer)
+end)
 
 Player.CharacterAdded:Connect(function(character)
     OnCharacterAdded(character)
