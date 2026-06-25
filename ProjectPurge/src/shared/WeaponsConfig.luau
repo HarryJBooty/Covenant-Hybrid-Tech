@@ -22,6 +22,12 @@ local WeaponsConfig = {
             Swing = "rbxassetid://127641094268918",
             Idle = "rbxassetid://105706163181264",
             Lunge = "rbxassetid://138470867002148",
+        },
+        ViewportAnimations = {
+            Swing = "rbxassetid://93356198285791",
+            Idle = "",
+            Lunge = "rbxassetid://99255929283063",        
+            LungeFinish = "rbxassetid://121735374706803"
         }
     },
 

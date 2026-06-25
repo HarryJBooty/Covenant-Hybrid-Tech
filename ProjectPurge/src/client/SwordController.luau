@@ -90,6 +90,7 @@ local function Swing()
     local StartTime = os.clock()
     SwingActiveFlag = true
     AnimationController.PlaySwordSwing()
+    ViewController.SwingSword() 
     SwordSwungRemote:FireServer() -- woosh plays globally
     HitDetectionConnection = RunService.RenderStepped:Connect(function(deltaTime)
         if os.clock() - StartTime > SwingRuntime then
@@ -162,6 +163,7 @@ local function StartLungeLoop(Character, Target)
     end
 
     AnimationController.PlaySwordLunge() -- looped pose held while dashing in
+    ViewController:PlaySwordLunge() 
 
     local ARRIVAL_DISTANCE = 5
     local INITIAL_SPEED = 24
@@ -173,6 +175,7 @@ local function StartLungeLoop(Character, Target)
     local currentSpeed = INITIAL_SPEED
     local losExclude = { Character, Workspace.CurrentCamera }
     local finished = false
+    local lungeArrived = false -- true only when we reached the target; false for any cancel/interrupt
 
     local function finishLunge()
         if finished then return end -- may be called by arrival, a stop condition, or a clash; run once
@@ -187,6 +190,11 @@ local function StartLungeLoop(Character, Target)
         end
 
         AnimationController.StopSwordLunge()
+        if lungeArrived then
+            ViewController:StopSwordLunge() -- arrival: play the finisher flourish
+        else
+            ViewController:CancelSwordLunge() -- cancelled (dash evade, LOS lost, unequip): instant cut
+        end
 
         if hrp and hrp.Parent then
             hrp.AssemblyLinearVelocity = Vector3.zero
@@ -229,7 +237,8 @@ local function StartLungeLoop(Character, Target)
         local distance = (targetHrp.Position - hrp.Position).Magnitude
         if distance <= ARRIVAL_DISTANCE then
             -- lunge connected: swing anim + let the server damage the target or resolve a clash
-            AnimationController.PlaySwordSwing()
+            lungeArrived = true
+            AnimationController.PlaySwordSwing() 
             SwordSwungRemote:FireServer() -- woosh plays globally
             LungeHitRemote:FireServer(Target, targetHumanoid)
             return true
@@ -252,6 +261,7 @@ local function StartLungeLoop(Character, Target)
         local offset = targetHrp.Position - hrp.Position
         local distance = offset.Magnitude
         if distance <= ARRIVAL_DISTANCE then
+            lungeArrived = true
             finishLunge()
             return
         end

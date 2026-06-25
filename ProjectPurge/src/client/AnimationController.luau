@@ -45,7 +45,7 @@ function AnimationController.PlaySwordSwing()
     SwingAnimation.AnimationId = WeaponConfig["Energy Sword"].Animations.Swing
 
     CurrentSwingTrack = Animatior:LoadAnimation(SwingAnimation)
-    CurrentSwingTrack.Priority = Enum.AnimationPriority.Action
+    CurrentSwingTrack.Priority = Enum.AnimationPriority.Action3
     CurrentSwingTrack.Looped = false
     CurrentSwingTrack:Play()
 
@@ -66,7 +66,7 @@ function AnimationController.PlaySwordLunge()
     LungeAnimation.AnimationId = WeaponConfig["Energy Sword"].Animations.Lunge
 
     CurrentLungeTrack = Animatior:LoadAnimation(LungeAnimation)
-    CurrentLungeTrack.Priority = Enum.AnimationPriority.Action
+    CurrentLungeTrack.Priority = Enum.AnimationPriority.Action2
     CurrentLungeTrack.Looped = true
     CurrentLungeTrack:Play()
 
@@ -99,7 +99,7 @@ function AnimationController.PlayIdle(self, Tool : Tool)
     end 
 
     CurrentIdleTrack = Animatior:LoadAnimation(Animation)
-    CurrentIdleTrack.Priority = Enum.AnimationPriority.Movement
+    CurrentIdleTrack.Priority = Enum.AnimationPriority.Idle
     CurrentIdleTrack.Looped = true
     CurrentIdleTrack:Play()
 

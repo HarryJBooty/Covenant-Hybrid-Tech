@@ -245,6 +245,25 @@ local function GetTool(character)
     return "Empty"
 end 
 
+function ViewController.PlaySwordLunge()
+    if not ActiveViewModel then return end
+
+    ViewModelAnimations:EnableLunge(ActiveViewModel)
+end
+
+function ViewController.StopSwordLunge()
+    if not ActiveViewModel then return end
+
+    ViewModelAnimations:DisableLunge(ActiveViewModel)
+end
+
+-- instantly drop the lunge pose with no arrival finisher (lunge was cancelled, not completed)
+function ViewController.CancelSwordLunge()
+    if not ActiveViewModel then return end
+
+    ViewModelAnimations:CancelLunge(ActiveViewModel)
+end
+
 function ViewController.Dash(self, Direction)
     if not ActiveViewModel then return end 
 
@@ -268,6 +287,12 @@ function ViewController.Grapple()
     if not ActiveViewModel then return end 
         
     ViewModelAnimations:Grapple(ActiveViewModel, ThisTool)
+end
+
+function ViewController.SwingSword()
+    if not ActiveViewModel then return end 
+
+    ViewModelAnimations:SwingSword(ActiveViewModel)
 end
 
 function ViewController.EndGrapple()
@@ -407,6 +432,50 @@ function ViewController.Enable(self, Tool, character)
     )
 end
 
+-- world effects on a tool (e.g. the energy sword's saber/edge trails) don't respond to part
+-- Transparency. per the Roblox docs each of these hides via its own .Enabled flag, so that's the
+-- disabler we toggle. Attachments have no visuals themselves, so there's nothing to disable on them.
+local EFFECT_CLASSES = { "Trail", "Beam", "ParticleEmitter" }
+
+-- remember each effect's authored Enabled so leaving FPS never force-enables one meant to stay off
+local OriginalEffectEnabled = setmetatable({}, { __mode = "k" })
+
+local function IsHideableEffect(instance : Instance) : boolean
+    for _, ClassName in EFFECT_CLASSES do
+        if instance:IsA(ClassName) then
+            return true
+        end
+    end
+    return false
+end
+
+-- enable/disable every world effect under a single tool, snapshotting/restoring authored state
+local function ApplyToolEffectsEnabled(tool : Instance, enabled : boolean)
+    for _, Descendant in tool:GetDescendants() do
+        if IsHideableEffect(Descendant) then
+            if enabled then
+                local Authored = OriginalEffectEnabled[Descendant]
+                Descendant.Enabled = if Authored == nil then true else Authored
+                OriginalEffectEnabled[Descendant] = nil
+            else
+                if OriginalEffectEnabled[Descendant] == nil then
+                    OriginalEffectEnabled[Descendant] = Descendant.Enabled
+                end
+                Descendant.Enabled = false
+            end
+        end
+    end
+end
+
+-- toggle tool effects across all of the character's currently-held tools
+local function SetToolEffectsEnabled(character : Model, enabled : boolean)
+    for _, Child in character:GetChildren() do
+        if Child:IsA("Tool") then
+            ApplyToolEffectsEnabled(Child, enabled)
+        end
+    end
+end
+
 local function HideTools(character)
     -- fps mode hides 3rd person tool mesh
     for _, PotentialTool in character:GetChildren() do
@@ -416,6 +485,8 @@ local function HideTools(character)
             end
         end
     end
+    -- ...and kill the world effects (trails/beams/particles) that ignore Transparency
+    SetToolEffectsEnabled(character, false)
 end 
 
 local function RevealTools(character)
@@ -428,6 +499,7 @@ local function RevealTools(character)
             end
         end
     end
+    SetToolEffectsEnabled(character, true)
 end
 
 local function EnsureRemovedToolVisibility(Tool)
@@ -435,6 +507,10 @@ local function EnsureRemovedToolVisibility(Tool)
         if Child.Name ~= "Hitbox" then
             Child.Transparency = 0 
         end
+    end
+    -- a tool leaving the character (unequip) gets its effects back so it's correct elsewhere
+    if Tool:IsA("Tool") then
+        ApplyToolEffectsEnabled(Tool, true)
     end
 end
 
@@ -480,7 +556,33 @@ local function GetViewState()
     return 
 end
 
+-- nuke every viewmodel (tracked + any orphan clones still parented to the camera) so a fresh life
+-- never inherits the previous life's arms/weapon viewmodel. per-key cleanup alone can miss a clone
+-- that got swapped out of the cache (e.g. after a respawn camera swap), leaving the old sword viewmodel
+-- floating on the new, possibly tool-less, character.
+local function DestroyAllViewModels()
+    for key, ViewModel in ViewModelInstances do
+        if ViewModel then
+            ViewModel:Destroy()
+        end
+        ViewModelInstances[key] = nil
+    end
+
+    local Camera = workspace.CurrentCamera
+    if Camera then
+        for _, Child in Camera:GetChildren() do
+            if Child:IsA("Model") and ViewportFolder:FindFirstChild(Child.Name) then
+                Child:Destroy()
+            end
+        end
+    end
+
+    ActiveViewModel = nil
+end
+
 local function OnCharacterAdded(character)
+    -- start every life from a clean slate so a stale viewmodel can't carry over
+    DestroyAllViewModels()
     ThisTool = GetTool(character)
     if ViewDetectionConnection then
         ViewDetectionConnection:Disconnect()
@@ -543,10 +645,7 @@ local function OnCharacterAdded(character)
         -- skip if a respawn already took over, else we clobber the new life's state
         if Player.Character and Player.Character ~= character then return end
         table.clear(OriginalArmC0)
-        ViewModelInstances.Gun = nil
-        ViewModelInstances.Idle = nil
-        ViewModelInstances.Melee = nil 
-        ActiveViewModel = nil
+        DestroyAllViewModels()
         if ViewDetectionConnection then
             ViewDetectionConnection:Disconnect()
             ViewDetectionConnection = nil
@@ -562,15 +661,7 @@ local function CleanUpOnDeath()
         CharacterFollowsCursorConnection = nil
     end
     RunService:UnbindFromRenderStep("MyFPSarms")
-    for _, ViewModel in ViewModelInstances do
-        if ViewModel then
-            ViewModel:Destroy()
-        end
-    end
-    ViewModelInstances.Idle = nil
-    ViewModelInstances.Gun = nil
-    ViewModelInstances.Melee = nil
-    ActiveViewModel = nil
+    DestroyAllViewModels()
 end
 
 Player.CharacterAdded:Connect(function(character)

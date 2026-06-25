@@ -2,6 +2,7 @@
 
 local ContentProvider = game:GetService("ContentProvider")
 local MovementConfig = require(game.ReplicatedStorage.Shared.MovementConfig)
+local WeaponsConfig = require(game.ReplicatedStorage.Shared.WeaponsConfig)
 
 local PreloadAnimations = {}
 
@@ -47,6 +48,18 @@ local function gatherAnimationAssetIds(): { string }
 
 	addId(seen, ids, MovementConfig.Grapple.LocalAnimation)
 	addId(seen, ids, MovementConfig.Grapple.SwordAnimation)
+	addId(seen, ids, MovementConfig.Grapple.GunAnimation)
+
+	-- weapon anims: 3rd-person (Animations) and viewmodel (ViewportAnimations)
+	for _, weapon in pairs(WeaponsConfig) do
+		for _, animSet in pairs({ weapon.Animations, weapon.ViewportAnimations }) do
+			if type(animSet) == "table" then
+				for _, animId in pairs(animSet) do
+					addId(seen, ids, animId)
+				end
+			end
+		end
+	end
 
 	return ids
 end
