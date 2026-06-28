@@ -65,6 +65,40 @@ local LungeDamageTokens = {} -- target character -> token, lets a parry cancel d
 local AttackCommitTime = {} -- character -> os.clock() they committed their current attack; lower = lunged/swung first
 local LungeInfo = {} -- lunger character -> { Target = Model }, used so the target can dash-evade
 
+local function GetEquippedSword(character : Model) : Tool?
+    local tool = character:FindFirstChildOfClass("Tool")
+    if tool and tool:GetAttribute("Type") == "Melee" then
+        return tool
+    end
+    return nil
+end
+
+local function EnsureSwordAmmo(sword : Tool)
+    local maxAmmo = tonumber(sword:GetAttribute("MaxAmmo")) or WeaponsConfig["Energy Sword"].Ammo or 0
+    if sword:GetAttribute("MaxAmmo") == nil then
+        sword:SetAttribute("MaxAmmo", maxAmmo)
+    end
+    if sword:GetAttribute("Ammo") == nil then
+        sword:SetAttribute("Ammo", maxAmmo)
+    end
+end
+
+local function TrySpendSwordAmmo(character : Model) : boolean
+    local sword = GetEquippedSword(character)
+    if not sword then
+        return false
+    end
+
+    EnsureSwordAmmo(sword)
+    local ammo = tonumber(sword:GetAttribute("Ammo")) or 0
+    if ammo <= 0 then
+        return false
+    end
+
+    sword:SetAttribute("Ammo", ammo - 1)
+    return true
+end
+
 -- true if these two already clashed within the parry window
 local function ParriedRecently(a, b, now)
     local rec = LastParry[a]
@@ -288,6 +322,7 @@ SwingRemote.OnServerEvent:Connect(function(player, Model, Humanoid : Humanoid, W
     local TargetRoot = Model:FindFirstChild("HumanoidRootPart")
     if not SelfRoot or not TargetRoot then return end 
     if (TargetRoot.Position - SelfRoot.Position).Magnitude > MAX_HIT_DISTANCE then return end 
+    if not TrySpendSwordAmmo(ThisChar) then return end
 
     local Now = os.clock()
     -- swinging into a player who is mid-lunge parries it: clash instead of trading damage
@@ -313,6 +348,7 @@ LungeHitRemote.OnServerEvent:Connect(function(player, Model, Humanoid : Humanoid
     local TargetRoot = Model:FindFirstChild("HumanoidRootPart")
     if not SelfRoot or not TargetRoot then return end 
     if (TargetRoot.Position - SelfRoot.Position).Magnitude > MAX_HIT_DISTANCE then return end 
+    if not TrySpendSwordAmmo(ThisChar) then return end
 
     local Now = os.clock()
     -- immediate clash when the target is also mid-lunge, just swung at us, or we already clashed this pair

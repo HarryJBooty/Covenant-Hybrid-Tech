@@ -10,6 +10,7 @@ local Workspace = game:GetService("Workspace")
 local GuiService = game:GetService("GuiService")
 local WeaponConfig = require(game.ReplicatedStorage.Shared.WeaponsConfig)
 local ViewController = require(script.Parent.ViewController)
+local InterfaceController = require(script.Parent.InterfaceController)
 local AnimationController = require(script.Parent.AnimationController)
 local PlayerController = require(script.Parent.PlayerController)
 local SwingRemote : RemoteEvent = game.ReplicatedStorage.Remotes.SwordSwing 
@@ -43,6 +44,15 @@ local Player = PlayerService.LocalPlayer
 local Character = Player.Character
 local PlayerGui = Player.PlayerGui
 
+local function HasSwordAmmo(sword : Tool?)
+    if not sword then return false end
+    local ammo = tonumber(sword:GetAttribute("Ammo"))
+    if ammo == nil then
+        return true
+    end
+    return ammo > 0
+end
+
 local function CastDebugSwingPart(Hitbox : BasePart)
     -- red box shows hitbox for tuning, remove later
     local Size = Hitbox.Size
@@ -73,6 +83,7 @@ local function Swing()
 
     local Sword = Character:FindFirstChildOfClass("Tool")
     if not Sword then return end 
+    if not HasSwordAmmo(Sword) then return end
     local HitBox : BasePart = Sword:FindFirstChild("Hitbox", true)
     if not HitBox then return end 
 
@@ -285,6 +296,8 @@ local function Lunge()
     local Humanoid : Humanoid = Character:FindFirstChild("Humanoid")
     if not Humanoid then return end 
     if Humanoid.Health <= 0 then return end 
+    local Sword = Character:FindFirstChildOfClass("Tool")
+    if not HasSwordAmmo(Sword) then return end
 
     if LungeData.CurrentTarget and LungeData.CanLunge then
         StartLungeLoop(Character, LungeData.CurrentTarget) 
@@ -413,8 +426,11 @@ local function InitSword(Sword : Tool)
     if Sword:GetAttribute("Ammo") == nil then
         Sword:SetAttribute("Ammo", WeaponConfig["Energy Sword"].Ammo)
     end    
-    local Ammo = Sword:GetAttribute("Ammo")
+    if Sword:GetAttribute("MaxAmmo") == nil then
+        Sword:SetAttribute("MaxAmmo", WeaponConfig["Energy Sword"].Ammo)
+    end
     WeaponData = table.clone(WeaponConfig["Energy Sword"])
+    InterfaceController:EquipPrimary(Sword)
     AnimationController:PlayIdle(PlayerController:GetTool())
     ViewController.ApplyCharFollowsCursorLock(true, 0)
 
