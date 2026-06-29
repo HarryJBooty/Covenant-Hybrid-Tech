@@ -101,14 +101,11 @@ function ViewModelAnimations.DashStop(self, ViewModel)
 end
 
 function ViewModelAnimations.PlayDash(self, ViewModel, Direction, WeaponType)
-    print(WeaponType)
     local AnimationId 
     if WeaponType == "Empty" then 
         local LocalsMap = MovementConfig.Dash.LocalAnimations 
         AnimationId = LocalsMap[Direction]
-        print("Empty confirmed!") 
     elseif WeaponType == "Melee" then
-        print("melee confirrmed!")
         local LocalsMap = MovementConfig.Dash.SwordAnimations
         AnimationId = LocalsMap[Direction]
     end 
@@ -127,11 +124,22 @@ function ViewModelAnimations.PlayDash(self, ViewModel, Direction, WeaponType)
     local ThisAnimation = Instance.new("Animation")
     ThisAnimation.AnimationId = AnimationId
 
-    LastDashTrack = Animator:LoadAnimation(ThisAnimation)
-    LastDashTrack.Looped = false
-    LastDashTrack.Priority = Enum.AnimationPriority.Action
-    LastDashTrack:Play(0.05, 1, 1)
-    
+    local Track = Animator:LoadAnimation(ThisAnimation)
+    Track.Looped = false
+    Track.Priority = Enum.AnimationPriority.Action
+    LastDashTrack = Track
+
+    local Speed = MovementConfig.Dash.AnimationSpeed or 1
+    Track:Play(0.05, 1, Speed)
+
+    -- one-shot: play to its natural end then blend back to idle, instead of being cut off when the
+    -- short velocity burst finishes. a newer dash replaces LastDashTrack, so the guard skips this.
+    Track.Stopped:Once(function()
+        if LastDashTrack == Track then
+            LastDashTrack = nil
+            ViewModelAnimations:PlayIdle(ViewModel)
+        end
+    end)
 end 
 
 function ViewModelAnimations.PlayIdle(self, ViewModel)

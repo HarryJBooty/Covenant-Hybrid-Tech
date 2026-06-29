@@ -28,6 +28,7 @@ local LungeLoopConnection : RBXScriptConnection
 local TargetingLoopConnection : RBXScriptConnection
 local KnockbackConnection : RBXScriptConnection?
 local ActiveLungeFinish : (() -> ())? = nil -- ends the in-progress lunge; lets a clash stop both lunges together
+local ActiveLungeRedirect : (() -> ())? = nil -- target dashed clear: redirect the lunge to their last position
 local Cursor : ImageLabel
 local WeaponData = {} 
 -- TODO: sword lunge — see Lunge() below
@@ -38,6 +39,18 @@ local LungeData = {
 local CamOffsetInitial = nil 
 local Connections : RBXScriptConnection = {} 
 local SwingActiveFlag = false
+
+-- shared attack lockout. a normal swing and a landed lunge both arm this, so you can't instantly
+-- chain another hit after either. the click handler below bails while SwingActiveFlag is true.
+local SWING_RUNTIME = 0.3   -- hitbox-active window of a normal swing
+local ATTACK_RECOVERY = 0.5 -- extra lockout after the active window / after a lunge connects
+
+local function StartAttackCooldown()
+    SwingActiveFlag = true
+    task.delay(SWING_RUNTIME + ATTACK_RECOVERY, function()
+        SwingActiveFlag = false
+    end)
+end
 
 
 local Player = PlayerService.LocalPlayer
@@ -97,19 +110,15 @@ local function Swing()
     local AlreadyHit = {} -- one hit per humanoid per swing
 
     local HitDetectionConnection : RBXScriptConnection
-    local SwingRuntime = 0.3
     local StartTime = os.clock()
-    SwingActiveFlag = true
+    StartAttackCooldown()
     AnimationController.PlaySwordSwing()
     ViewController.SwingSword() 
     SwordSwungRemote:FireServer() -- woosh plays globally
     HitDetectionConnection = RunService.RenderStepped:Connect(function(deltaTime)
-        if os.clock() - StartTime > SwingRuntime then
+        if os.clock() - StartTime > SWING_RUNTIME then
             table.clear(AlreadyHit)
             HitDetectionConnection:Disconnect()
-            task.delay(0.5, function()
-                SwingActiveFlag = false
-            end)
             return 
         end
 
@@ -187,12 +196,18 @@ local function StartLungeLoop(Character, Target)
     local losExclude = { Character, Workspace.CurrentCamera }
     local finished = false
     local lungeArrived = false -- true only when we reached the target; false for any cancel/interrupt
+    local lungeRedirected = false       -- true once the target dashed clear and we committed to their last spot
+    local ghostTargetPos : Vector3? = nil -- the target's position the instant they dashed; we lunge here instead
+    local redirectLunge -- forward declared so finishLunge can clear the exposed ActiveLungeRedirect
 
     local function finishLunge()
         if finished then return end -- may be called by arrival, a stop condition, or a clash; run once
         finished = true
         if ActiveLungeFinish == finishLunge then
             ActiveLungeFinish = nil
+        end
+        if ActiveLungeRedirect == redirectLunge then
+            ActiveLungeRedirect = nil
         end
 
         if LungeLoopConnection then
@@ -223,16 +238,29 @@ local function StartLungeLoop(Character, Target)
 
     ActiveLungeFinish = finishLunge -- expose so a server clash can end this lunge in sync
 
+    -- target dashed out of the lock: commit to the spot they were standing on instead of stopping, so a
+    -- short dodge still gets punished. one-shot; the live-target hit check below can still catch them.
+    function redirectLunge()
+        if finished or lungeRedirected then return end
+        if targetHrp and targetHrp.Parent then
+            ghostTargetPos = targetHrp.Position
+            lungeRedirected = true
+        else
+            finishLunge() -- nothing left to aim at
+        end
+    end
+    ActiveLungeRedirect = redirectLunge -- expose so the dash-evade remote can redirect this lunge
+
     local function shouldStopLunge(): boolean
         if not Character.Parent or Player.Character ~= Character then
             return true
         end
 
-        if not hrp.Parent or not targetHrp.Parent then
+        if not hrp.Parent then
             return true
         end
 
-        if humanoid.Health <= 0 or targetHumanoid.Health <= 0 then
+        if humanoid.Health <= 0 then
             return true
         end
 
@@ -245,13 +273,35 @@ local function StartLungeLoop(Character, Target)
             return true
         end
 
-        local distance = (targetHrp.Position - hrp.Position).Magnitude
-        if distance <= ARRIVAL_DISTANCE then
-            -- lunge connected: swing anim + let the server damage the target or resolve a clash
-            lungeArrived = true
-            AnimationController.PlaySwordSwing() 
-            SwordSwungRemote:FireServer() -- woosh plays globally
-            LungeHitRemote:FireServer(Target, targetHumanoid)
+        -- a real hit always wins: if the living target is within reach we connect, whether we're still
+        -- locked on or chasing the spot they dashed away from (a short dodge gets punished anyway)
+        if targetHrp and targetHrp.Parent and targetHumanoid and targetHumanoid.Health > 0 then
+            if (targetHrp.Position - hrp.Position).Magnitude <= ARRIVAL_DISTANCE then
+                -- lunge connected: swing anim + let the server damage the target or resolve a clash.
+                -- arm the same lockout as a swing so you can't spam-click another hit the instant it lands.
+                lungeArrived = true
+                StartAttackCooldown()
+                AnimationController.PlaySwordSwing() 
+                SwordSwungRemote:FireServer() -- woosh plays globally
+                LungeHitRemote:FireServer(Target, targetHumanoid)
+                return true
+            end
+        end
+
+        if lungeRedirected then
+            -- committed to the last-known spot: stop once we get there (a whiff if no one's in range)
+            if not ghostTargetPos then
+                return true
+            end
+            if (ghostTargetPos - hrp.Position).Magnitude <= ARRIVAL_DISTANCE then
+                lungeArrived = true
+                return true
+            end
+            return false
+        end
+
+        -- still locked on: bail if the target vanished or we lost line of sight
+        if not targetHrp.Parent or targetHumanoid.Health <= 0 then
             return true
         end
 
@@ -269,15 +319,16 @@ local function StartLungeLoop(Character, Target)
             return
         end
 
-        local offset = targetHrp.Position - hrp.Position
-        local distance = offset.Magnitude
-        if distance <= ARRIVAL_DISTANCE then
-            lungeArrived = true
+        -- aim at the live target while locked on, or the locked last-known spot after a dash evade
+        local aimPos = if lungeRedirected then ghostTargetPos else targetHrp.Position
+        if not aimPos then
             finishLunge()
             return
         end
 
-        -- Face the target so the screen centre stays on them without moving the camera.
+        local offset = aimPos - hrp.Position
+
+        -- Face the aim point so the screen centre stays on it without moving the camera.
         local flatLook = Vector3.new(offset.X, 0, offset.Z)
         if flatLook.Magnitude > 0.01 then
             hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + flatLook.Unit)
@@ -439,6 +490,7 @@ local function InitSword(Sword : Tool)
 
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             if SwingActiveFlag then return end 
+            if ActiveLungeFinish then return end -- a lunge is mid-dash, don't queue another attack
             print("Left click")
             if LungeData.CanLunge == true then 
                 -- TODO: call Lunge() here instead of Swing()
@@ -558,12 +610,11 @@ end
 
 ClashKnockbackRemote.OnClientEvent:Connect(PerformClashKnockback)
 
--- the server cancelled our lunge (the target dashed clear): stop moving and drop the lunge animation
+-- the target dashed clear: don't stop, redirect the lunge to the spot they dashed from so a short
+-- dodge can still be punished (they take the hit if we reach them anyway)
 CancelLungeRemote.OnClientEvent:Connect(function()
-    if ActiveLungeFinish then
-        local finish = ActiveLungeFinish
-        ActiveLungeFinish = nil
-        finish()
+    if ActiveLungeRedirect then
+        ActiveLungeRedirect()
     end
 end)
 

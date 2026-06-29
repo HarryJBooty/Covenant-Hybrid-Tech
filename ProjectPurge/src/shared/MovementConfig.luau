@@ -27,6 +27,9 @@ local MovementConfig = {
         Uses = 2,
         ToggleKey = Enum.KeyCode.E,
         SoundEffect = "",
+        -- dash anims are one-shots that play to their natural end (no longer cut off when the short
+        -- velocity burst finishes). lower this below 1 to draw the dash anim out and make it read slower.
+        AnimationSpeed = 1,
         LocalAnimations = {
             Forward = "rbxassetid://110733753326832",
             Backwards = "rbxassetid://72228040820840",
@@ -38,6 +41,13 @@ local MovementConfig = {
             Backwards = "rbxassetid://98013871485229",
             Left = "rbxassetid://107377379773288",
             Right = "rbxassetid://82205912435530",
+        },
+        -- 3rd person body dash anims, keyed by direction
+        DashAnimations = {
+            Front = "rbxassetid://92206503001988",
+            Back = "rbxassetid://86583152615267",
+            Left = "rbxassetid://119666198500303",
+            Right = "rbxassetid://96659539643288",
         }
     },
 
@@ -46,7 +56,7 @@ local MovementConfig = {
         ToggleKey = Enum.KeyCode.Q,
         LocalAnimation = "rbxassetid://127112804819421",
         SwordAnimation = "rbxassetid://95039176681428",
-        GunAnimation = "",
+        GunAnimation = "rbxassetid://88304451939157",
         SoundEffect = "rbxassetid://73256054215788"
     }
 }

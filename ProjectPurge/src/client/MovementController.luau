@@ -468,6 +468,7 @@ local function Dash(character, Humanoid)
 
     DashActive = true
     ViewController:Dash(CardinalDirection)
+    AnimationController:PlayDash(CardinalDirection)
 
     DashRemote:FireServer()
     local Time0 = os.clock() 
@@ -475,7 +476,8 @@ local function Dash(character, Humanoid)
         if not HumanoidRootPart or os.clock() - Time0 >= DashDuration then
             if DashBoostConnection then
                 DashBoostConnection:Disconnect()
-                ViewController:EndDash()
+                -- only the velocity burst ends here; the dash anims are one-shots that play out to
+                -- their natural end and blend back to idle themselves, so we don't cut them off
                 DashBoostConnection = nil
                 task.delay(DashCooldown, function()
                     DashActive = false

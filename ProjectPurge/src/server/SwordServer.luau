@@ -208,12 +208,11 @@ local function ApplyParry(Char1 : Model, Char2 : Model)
     end
 end
 
--- abort a lunge in progress: clears the clash flag (which also gates out any incoming LungeHit) and
--- tells the lunger's client to stop moving / stop the animation.
-local function CancelLunge(lunger : Model)
+-- the target dashed out of our lock. don't kill the lunge outright: just drop the lock (so further
+-- dashes can't keep re-triggering this) but KEEP CanClash set so a follow-up in-range LungeHit is
+-- still honoured, then tell the lunger's client to commit to the target's last position.
+local function RedirectLungeOnDash(lunger : Model)
     LungeInfo[lunger] = nil
-    ClashTokens[lunger] = (ClashTokens[lunger] or 0) + 1 -- cancel pending grace/safety clears
-    lunger:SetAttribute("CanClash", false)
 
     local LungerPlayer = PlayerService:GetPlayerFromCharacter(lunger)
     if LungerPlayer then
@@ -296,15 +295,16 @@ PlayerService.PlayerRemoving:Connect(function(player)
     end
 end)
 
--- dash-evade: dashing breaks the lunger's lock, so cancel any lunge aimed at us as soon as we dash
--- (works from the moment they start). runs alongside MovementServer's own dash-charge handler.
+-- dash-evade: dashing breaks the lunger's lock-on, but instead of cancelling outright we redirect
+-- their lunge to where we were, so a short dodge still gets punished if it passes through our old
+-- spot. runs alongside MovementServer's own dash-charge handler.
 DashRemote.OnServerEvent:Connect(function(player)
     local Dasher = player.Character
     if not Dasher then return end 
 
     for Lunger, info in LungeInfo do
         if info.Target == Dasher and Lunger.Parent then
-            CancelLunge(Lunger)
+            RedirectLungeOnDash(Lunger)
         end
     end
 end)

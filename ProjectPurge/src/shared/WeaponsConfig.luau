@@ -16,7 +16,7 @@ local WeaponsConfig = {
         -- TODO: lunge movement tuning (used by SwordController.Lunge)
         -- LungeSpeed = 40,
         -- LungeStopDistance = 5,
-        Ammo = 10,
+        Ammo = 20,
         ParryWindow = 0.5,
         Animations = {
             Swing = "rbxassetid://127641094268918",

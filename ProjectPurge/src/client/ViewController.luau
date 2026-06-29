@@ -323,6 +323,8 @@ end
 local function ResolveViewModelTemplate(Tool)
     if Tool == "Melee" then
         return ViewportFolder:FindFirstChild("Melee")
+    elseif Tool == "Gun" then
+        return ViewportFolder:FindFirstChild("Gun")
     end
     return ViewportFolder:FindFirstChild(ViewportConfig.Idle)
 end

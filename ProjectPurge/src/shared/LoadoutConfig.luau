@@ -28,7 +28,7 @@ LoadoutConfig.Teams = {
 		TeamColor = BrickColor.new("Bright blue"),
 		AutoAssignable = true,
 		Loadout = {
-			Primary = "Energy Sword",
+			Primary = "Plasma Rifle",
 			Secondary = "Energy Sword",
 		},
 	},
