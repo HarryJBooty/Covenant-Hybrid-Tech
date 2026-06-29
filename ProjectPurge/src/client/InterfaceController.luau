@@ -3,6 +3,7 @@
 local InterfaceController = {}
 local PlayerService = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
 local WeaponsConfig = require(game.ReplicatedStorage.Shared.WeaponsConfig)
 local Player = PlayerService.LocalPlayer
 local PlayerGui = Player.PlayerGui
@@ -27,6 +28,11 @@ end
 local function IsWeaponTool(tool)
     if not tool or not tool:IsA("Tool") then
         return false
+    end
+
+    -- a server-granted loadout tool is tagged with its slot, so trust that first
+    if tool:GetAttribute("Slot") ~= nil then
+        return true
     end
 
     local config = WeaponsConfig[tool.Name]
@@ -77,19 +83,28 @@ local function SetSlotHighlight(slotFrame, enabled : boolean)
     end
 end
 
-local function SetSlotAmmo(slotFrame, tool : Tool?)
-    if not slotFrame then return end
+-- there's a single shared ammo readout in the whole HUD, so write the equipped tool's ammo into
+-- every Current/Stock label we find. blank when nothing is held.
+local function SetAmmoText(tool : Tool?)
+    local WeaponHUD = GetWeaponHUD()
+    if not WeaponHUD then return end
 
-    local Ammo, MaxAmmo = GetToolAmmo(tool)
-    local Current : TextLabel? = slotFrame:FindFirstChild("Current")
-    local CurrentGlow : TextLabel? = slotFrame:FindFirstChild("CurrentGlow")
-    local Stock : TextLabel? = slotFrame:FindFirstChild("Stock")
-    local StockGlow : TextLabel? = slotFrame:FindFirstChild("StockGlow")
+    local currentText, stockText = "", ""
+    if tool then
+        local Ammo, MaxAmmo = GetToolAmmo(tool)
+        currentText = tostring(Ammo)
+        stockText = tostring(MaxAmmo)
+    end
 
-    if Current then Current.Text = tostring(Ammo) end
-    if CurrentGlow then CurrentGlow.Text = tostring(Ammo) end
-    if Stock then Stock.Text = tostring(MaxAmmo) end
-    if StockGlow then StockGlow.Text = tostring(MaxAmmo) end
+    for _, label in WeaponHUD:GetDescendants() do
+        if label:IsA("TextLabel") then
+            if label.Name == "Current" or label.Name == "CurrentGlow" then
+                label.Text = currentText
+            elseif label.Name == "Stock" or label.Name == "StockGlow" then
+                label.Text = stockText
+            end
+        end
+    end
 end
 
 local function GetKnownTools()
@@ -155,8 +170,11 @@ local function RefreshWeaponUI()
     local Secondary = GetSlotFrame("Secondary")
     local equipped = Character and Character:FindFirstChildOfClass("Tool")
 
-    SetSlotAmmo(Primary, slotTools[1])
-    SetSlotAmmo(Secondary, slotTools[2])
+    -- one shared ammo readout follows the equipped weapon; fall back to the most recently equipped
+    -- (or the primary) so it isn't blank before the first equip
+    SetAmmoText(equipped or LastEquippedTool or slotTools[1])
+
+    -- the slot frames are just selection indicators for which weapon is out
     SetSlotHighlight(Primary, equipped ~= nil and equipped == slotTools[1])
     SetSlotHighlight(Secondary, equipped ~= nil and equipped == slotTools[2])
 end
@@ -180,6 +198,37 @@ local function RefreshToolTracking()
     end
     RefreshWeaponUI()
 end
+
+-- equip the tool assigned to a slot (1 = primary, 2 = secondary). pressing the slot that's already
+-- equipped puts it away. we drive this ourselves since the default backpack hotkeys are disabled.
+local function EquipSlot(slot : number)
+    local character = Player.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local tool = GetSlotTools()[slot]
+    if not tool then return end
+
+    if tool.Parent == character then
+        humanoid:UnequipTools() -- already out, so toggle it away
+    else
+        humanoid:EquipTool(tool)
+    end
+end
+
+local SLOT_KEYS = {
+    [Enum.KeyCode.One] = 1,
+    [Enum.KeyCode.Two] = 2,
+}
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    local slot = SLOT_KEYS[input.KeyCode]
+    if slot then
+        EquipSlot(slot)
+    end
+end)
 
 function InterfaceController.EquipPrimary(self, Tool)
     if not IsWeaponTool(Tool) then return end
