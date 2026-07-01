@@ -183,7 +183,6 @@ local function OnCharacterAdded(character)
     -- attributes replicated to clients for ui + hit logic
     character:SetAttribute("Shield", ShieldConfig.DEFAULT_SHIELD)
     character:SetAttribute("MaxShield", ShieldConfig.DEFAULT_SHIELD)
-    character:SetAttribute("Health", ShieldConfig.DEFAULT_HEALTH)
     character:SetAttribute("MaxHealth", ShieldConfig.DEFAULT_HEALTH)
 
     ShieldData[character] = {

@@ -8,7 +8,7 @@ local WeaponsConfig = {
         DamageHead = 14,
         DamageMelee = 50,
         Ammo = 50,
-        Reload = 0.02,
+        Reload = 0.2,
         ROF = 0.05, 
     },
 
