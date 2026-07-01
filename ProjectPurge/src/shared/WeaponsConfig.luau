@@ -3,14 +3,17 @@
 local WeaponsConfig = {
 
     ["Plasma Rifle"] = {
+        SubType = "AutomaticGun", 
         DamageBody = 10,
         DamageHead = 14,
         DamageMelee = 50,
         Ammo = 50,
         Reload = 0.02,
+        ROF = 0.05, 
     },
 
     ["Energy Sword"] = {
+        SubType = "Sword", 
         Damage = 100,
         LungeDistance = 60, -- raycast range for lock-on cursor
         -- TODO: lunge movement tuning (used by SwordController.Lunge)

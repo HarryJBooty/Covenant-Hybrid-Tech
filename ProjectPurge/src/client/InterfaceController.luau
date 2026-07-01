@@ -200,6 +200,28 @@ local function GetSlotTools()
     return slotTools
 end
 
+local function ClearWeaponUIState()
+    LastEquippedTool = nil
+    table.clear(ToolSlots)
+
+    for _, connections in AmmoConnections do
+        for _, connection in connections do
+            connection:Disconnect()
+        end
+    end
+    table.clear(AmmoConnections)
+end
+
+local function ResetWeaponHUD()
+    ClearWeaponUIState()
+    SetAmmoText(nil)
+
+    local Primary = GetSlotFrame("Primary")
+    local Secondary = GetSlotFrame("Secondary")
+    ApplySlotHighlight(Primary, 1, nil, nil, nil)
+    ApplySlotHighlight(Secondary, 2, nil, nil, nil)
+end
+
 local function RefreshWeaponUI()
     local slotTools = GetSlotTools()
     local Primary = GetSlotFrame("Primary")
@@ -208,10 +230,18 @@ local function RefreshWeaponUI()
 
     -- one shared ammo readout follows the equipped weapon; fall back to the most recently equipped
     -- (or the primary) so it isn't blank before the first equip
-    SetAmmoText(equipped or LastEquippedTool or slotTools[1])
+    local ammoTool = equipped
+    if not ammoTool and LastEquippedTool and LastEquippedTool.Parent then
+        ammoTool = LastEquippedTool
+    elseif not ammoTool then
+        ammoTool = slotTools[1]
+    end
+    SetAmmoText(ammoTool)
 
     -- active slot = cyan on frame + icon; when nothing is held, last-equipped icon = yellow
-    local lastEquippedSlot = if not equipped and LastEquippedTool then GetAssignedSlot(LastEquippedTool) else nil
+    local lastEquippedSlot = if not equipped and LastEquippedTool and LastEquippedTool.Parent
+        then GetAssignedSlot(LastEquippedTool)
+        else nil
     ApplySlotHighlight(Primary, 1, slotTools[1], equipped, lastEquippedSlot)
     ApplySlotHighlight(Secondary, 2, slotTools[2], equipped, lastEquippedSlot)
 end
@@ -353,6 +383,7 @@ local function OnCharacterReady(character)
     Backpack = Player.Backpack
     PlayerGui:WaitForChild("AJ", 10)
     HideRobloxToolbar()
+    ResetWeaponHUD()
 
     for _, connection in CharacterConnections do
         connection:Disconnect()
@@ -400,6 +431,10 @@ local function OnCharacterReady(character)
     InterfaceController:UpdateDash(Character)
     RefreshToolTracking()
 end
+
+Player.CharacterRemoving:Connect(function()
+    ResetWeaponHUD()
+end)
 
 Player.CharacterAdded:Connect(OnCharacterReady)
 

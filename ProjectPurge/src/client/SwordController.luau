@@ -493,7 +493,6 @@ local function InitSword(Sword : Tool)
             if ActiveLungeFinish then return end -- a lunge is mid-dash, don't queue another attack
             print("Left click")
             if LungeData.CanLunge == true then 
-                -- TODO: call Lunge() here instead of Swing()
                 Lunge()  
             else
                 Swing() 

@@ -347,7 +347,8 @@ local function OnCharacterAdded(character : Model)
     PrevShield = MaxShield
 	
     if ViewModel then
-        ShieldHighlight.Parent = ViewModel
+        ShieldHighlight.Parent = workspace.CurrentCamera
+        ShieldHighlight.Adornee = ViewModel
     end
 
 	character:GetAttributeChangedSignal("CurrentTool"):Connect(function()
@@ -355,7 +356,7 @@ local function OnCharacterAdded(character : Model)
 		print("attribute changed signal got on shield controller client")	
 		ViewModel = ViewController:ReceiveViewModel() 
 		if ViewModel then
-			ShieldHighlight.Parent = ViewModel
+			ShieldHighlight.Adornee = ViewModel
 		end
 		if ShieldsDown then
 			ApplyShieldBrokenEffect(true)

@@ -1,4 +1,4 @@
--- grapple shot sound on character
+-- for local sounds generally 
 
 local PlayerService = game:GetService("Players")
 local Player = PlayerService.LocalPlayer

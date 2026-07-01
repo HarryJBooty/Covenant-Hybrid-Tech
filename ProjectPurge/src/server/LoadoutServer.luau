@@ -58,6 +58,15 @@ local function ApplyAmmoAttributes(tool : Tool)
 	end
 end
 
+local function ApplyTypeAttributes(tool : Tool) 
+	local config = WeaponsConfig[tool.Name]
+	if not config or config.SubType == nil then return end 
+
+	if tool:GetAttribute("SubType") == nil then 
+		tool:SetAttribute("SubType", config.SubType)
+	end
+end 
+
 local function GiveTool(player : Player, toolName : string?, slot : number)
 	if not toolName then
 		return
@@ -77,6 +86,7 @@ local function GiveTool(player : Player, toolName : string?, slot : number)
 	local tool = template:Clone()
 	tool:SetAttribute("Slot", slot)
 	ApplyAmmoAttributes(tool)
+	ApplyTypeAttributes(tool)
 	tool.Parent = backpack
 end
 
