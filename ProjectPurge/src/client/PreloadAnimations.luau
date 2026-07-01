@@ -46,6 +46,13 @@ local function gatherAnimationAssetIds(): { string }
 		end
 	end
 
+	local dashGun = MovementConfig.Dash and MovementConfig.Dash.GunAnimations
+	if dashGun then
+		for _, animId in pairs(dashGun) do
+			addId(seen, ids, animId)
+		end
+	end
+
 	local dashBody = MovementConfig.Dash and MovementConfig.Dash.DashAnimations
 	if dashBody then
 		for _, animId in pairs(dashBody) do
@@ -53,6 +60,7 @@ local function gatherAnimationAssetIds(): { string }
 		end
 	end
 
+	addId(seen, ids, MovementConfig.Grapple.Animation)
 	addId(seen, ids, MovementConfig.Grapple.LocalAnimation)
 	addId(seen, ids, MovementConfig.Grapple.SwordAnimation)
 	addId(seen, ids, MovementConfig.Grapple.GunAnimation)

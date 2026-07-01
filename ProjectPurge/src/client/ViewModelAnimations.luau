@@ -105,6 +105,9 @@ function ViewModelAnimations.PlayDash(self, ViewModel, Direction, WeaponType)
     if WeaponType == "Empty" then 
         local LocalsMap = MovementConfig.Dash.LocalAnimations 
         AnimationId = LocalsMap[Direction]
+    elseif WeaponType == "Gun" then     
+        local LocalsMap = MovementConfig.Dash.GunAnimations
+        AnimationId = LocalsMap[Direction]
     elseif WeaponType == "Melee" then
         local LocalsMap = MovementConfig.Dash.SwordAnimations
         AnimationId = LocalsMap[Direction]

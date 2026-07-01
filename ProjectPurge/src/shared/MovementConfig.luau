@@ -42,6 +42,12 @@ local MovementConfig = {
             Left = "rbxassetid://107377379773288",
             Right = "rbxassetid://82205912435530",
         },
+        GunAnimations = {
+            Forward = "rbxassetid://114303551747568",
+            Backwards = "rbxassetid://75223905286612",
+            Left = "rbxassetid://127713661048697",
+            Right = "rbxassetid://128931580173600",
+        },
         -- 3rd person body dash anims, keyed by direction
         DashAnimations = {
             Front = "rbxassetid://92206503001988",
@@ -54,9 +60,10 @@ local MovementConfig = {
     Grapple = {
         GrappleRange = 100,
         ToggleKey = Enum.KeyCode.Q,
+        Animation = "rbxassetid://129118845763435",
         LocalAnimation = "rbxassetid://127112804819421",
         SwordAnimation = "rbxassetid://95039176681428",
-        GunAnimation = "rbxassetid://88304451939157",
+        GunAnimation = "rbxassetid://88555446051325",
         SoundEffect = "rbxassetid://73256054215788"
     }
 }

@@ -7,6 +7,7 @@ local MovementConfig = require(game.ReplicatedStorage.Shared.MovementConfig)
 local WeaponConfig = require(game.ReplicatedStorage.Shared.WeaponsConfig)
 
 local CurrentIdleTrack : AnimationTrack
+local CurrentGrappleTrack : AnimationTrack
 local CurrentSwingTrack 
 local CurrentLungeTrack 
 local CurrentDashTrack
@@ -34,6 +35,37 @@ local function ClearIdleAnim()
         CurrentIdleTrack:Destroy()
         CurrentIdleTrack = nil
     end
+end 
+
+function AnimationController.EndGrapple()
+    if CurrentGrappleTrack then
+        CurrentGrappleTrack:Stop(0.2)
+        CurrentGrappleTrack:Destroy()
+        CurrentGrappleTrack = nil 
+    end
+end 
+
+function AnimationController.PlayGrapple() 
+    print("Play grapple called")
+    local Character = Player.Character
+    local Humanoid = Character:FindFirstChild("Humanoid")
+    if not Humanoid then return end 
+    if not Character then return end 
+
+    local Animator = Humanoid:FindFirstChildOfClass("Animator")
+    if not Animator then return end 
+
+    local GrappleAnimation = Instance.new("Animation")
+    GrappleAnimation.AnimationId = MovementConfig.Grapple.Animation 
+
+    CurrentGrappleTrack = Animator:LoadAnimation(GrappleAnimation)
+    CurrentGrappleTrack.Priority = Enum.AnimationPriority.Action2
+    CurrentGrappleTrack.Looped = true
+    CurrentGrappleTrack:Play() 
+    print("Played grapple track")
+
+    return CurrentGrappleTrack
+
 end 
 
 function AnimationController.ClearOnDeath()

@@ -196,6 +196,7 @@ local function FinishGrapple()
     local ViewModel = ViewController:ReceiveViewModel()
     if not ViewModel then return end 
     ViewController:EndGrapple()
+    AnimationController:EndGrapple()
     InterfaceController:RegenGrapple() 
 end
 
@@ -396,6 +397,7 @@ local function FireGrapple(character)
     local ViewState = ViewController:GetMode()
     MovementController.ToggleGrappleBeamVisibility(ViewState)
     ViewController:Grapple()
+    AnimationController:PlayGrapple() 
     SFXController:PlayGrappleShot(character)
     -- let everyone else draw the third-person beam from our real arm, stuck to the same part
     GrappleStartRemote:FireServer(HitPart, TargetPosition)

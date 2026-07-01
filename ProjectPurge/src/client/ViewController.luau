@@ -129,6 +129,24 @@ CharacterLookRemote.OnClientEvent:Connect(function(otherPlayer : Player, pitch :
     ApplyRemoteLook(otherPlayer, pitch)
 end)
 
+local function ResetCharacterLookPose(Torso : BasePart?)
+    if not Torso then return end
+
+    local Neck = Torso:FindFirstChild("Neck")
+    local RightShoulder = Torso:FindFirstChild("Right Shoulder")
+    local LeftShoulder = Torso:FindFirstChild("Left Shoulder")
+
+    if Neck and OriginalNeckC0 then
+        Neck.C0 = OriginalNeckC0
+    end
+    if RightShoulder and OriginalArmC0[RightShoulder] then
+        RightShoulder.C0 = OriginalArmC0[RightShoulder]
+    end
+    if LeftShoulder and OriginalArmC0[LeftShoulder] then
+        LeftShoulder.C0 = OriginalArmC0[LeftShoulder]
+    end
+end
+
 function ViewController.ApplyCharFollowsCursorLock(state, AutomaticTimeout)
     if AutomaticTimeout == 0 then
         AutomaticTimeout = math.huge
@@ -136,15 +154,12 @@ function ViewController.ApplyCharFollowsCursorLock(state, AutomaticTimeout)
 
     local Character = Player.Character
     local Torso = Character and Character:FindFirstChild("Torso")
-    local Neck = Torso and Torso:FindFirstChild("Neck")
 
     if not state or not Character then
         if CharacterFollowsCursorConnection then
             CharacterFollowsCursorConnection:Disconnect()
             CharacterFollowsCursorConnection = nil 
-            if Neck then
-                Neck.C0 = OriginalNeckC0
-            end
+            ResetCharacterLookPose(Torso)
             -- tell everyone else to drop our look pose
             CharacterLookRemote:FireServer(nil)
             LookSendLastPitch = nil
@@ -159,7 +174,7 @@ function ViewController.ApplyCharFollowsCursorLock(state, AutomaticTimeout)
             if CharacterFollowsCursorConnection then
                 CharacterFollowsCursorConnection:Disconnect()
                 CharacterFollowsCursorConnection = nil  
-                Neck.C0 = OriginalNeckC0
+                ResetCharacterLookPose(Torso)
                 return 
             end
         end)
@@ -661,6 +676,8 @@ local function CleanUpOnDeath()
     if CharacterFollowsCursorConnection then
         CharacterFollowsCursorConnection:Disconnect()
         CharacterFollowsCursorConnection = nil
+        local Character = Player.Character
+        ResetCharacterLookPose(Character and Character:FindFirstChild("Torso"))
     end
     RunService:UnbindFromRenderStep("MyFPSarms")
     DestroyAllViewModels()

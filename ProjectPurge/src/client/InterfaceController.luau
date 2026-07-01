@@ -12,6 +12,7 @@ local Character = Player.Character
 local Backpack = Player.Backpack
 local ACTIVE_SLOT_COLOR = Color3.fromRGB(39, 255, 237)
 local INACTIVE_SLOT_COLOR = Color3.fromRGB(255, 255, 255)
+local LAST_EQUIPPED_SLOT_COLOR = Color3.fromRGB(255, 235, 0)
 
 local ToolSlots = {}
 local AmmoConnections = {}
@@ -71,15 +72,50 @@ local function GetSlotFrame(slotName : string)
     return WeaponHUD:FindFirstChild(slotName)
 end
 
-local function SetSlotHighlight(slotFrame, enabled : boolean)
+local function GetSlotIcon(slotFrame, slot : number): ImageLabel?
+    if not slotFrame then return nil end
+
+    if slot == 2 then
+        return slotFrame
+    end
+
+    return slotFrame:FindFirstChild("Icon") :: ImageLabel?
+end
+
+local function ApplySlotHighlight(
+    slotFrame,
+    slot : number,
+    slotTool : Tool?,
+    equipped : Tool?,
+    lastEquippedSlot : number?
+)
     if not slotFrame then return end
 
-    local color = if enabled then ACTIVE_SLOT_COLOR else INACTIVE_SLOT_COLOR
-    slotFrame.ImageColor3 = color
+    local slotColor = INACTIVE_SLOT_COLOR
+    local iconColor = INACTIVE_SLOT_COLOR
 
-    local Icon : ImageLabel? = slotFrame:FindFirstChild("Icon")
-    if Icon then
-        Icon.ImageColor3 = color
+    if equipped then
+        if equipped == slotTool then
+            slotColor = ACTIVE_SLOT_COLOR
+            iconColor = ACTIVE_SLOT_COLOR
+        end
+    elseif lastEquippedSlot == slot then
+        iconColor = LAST_EQUIPPED_SLOT_COLOR
+    end
+
+    local icon = GetSlotIcon(slotFrame, slot)
+
+    if slot == 2 then
+        if icon then
+            icon.ImageColor3 = iconColor
+        end
+        return
+    end
+
+    slotFrame.ImageColor3 = slotColor
+
+    if icon then
+        icon.ImageColor3 = iconColor
     end
 end
 
@@ -174,9 +210,10 @@ local function RefreshWeaponUI()
     -- (or the primary) so it isn't blank before the first equip
     SetAmmoText(equipped or LastEquippedTool or slotTools[1])
 
-    -- the slot frames are just selection indicators for which weapon is out
-    SetSlotHighlight(Primary, equipped ~= nil and equipped == slotTools[1])
-    SetSlotHighlight(Secondary, equipped ~= nil and equipped == slotTools[2])
+    -- active slot = cyan on frame + icon; when nothing is held, last-equipped icon = yellow
+    local lastEquippedSlot = if not equipped and LastEquippedTool then GetAssignedSlot(LastEquippedTool) else nil
+    ApplySlotHighlight(Primary, 1, slotTools[1], equipped, lastEquippedSlot)
+    ApplySlotHighlight(Secondary, 2, slotTools[2], equipped, lastEquippedSlot)
 end
 
 local function TrackToolAmmo(tool : Tool)
